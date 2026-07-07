@@ -66,7 +66,7 @@
   - Commit: "P1.5.1: Add state transition logging"
 
 ### P1.5.2: Add input action logging
-- [ ] Add `info!()` to all input handlers in input.rs
+- [x] Add `info!()` to all input handlers in input.rs
   - Log swipe direction when detected
   - Log card selection when made
   - Log button presses when triggered

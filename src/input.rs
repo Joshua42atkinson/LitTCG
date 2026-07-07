@@ -69,6 +69,7 @@ pub fn drag_end(
                 None
             };
             if let Some(choice) = choice {
+                info!("Swipe detected: {:?} (magnitude: {:.1})", choice, magnitude);
                 writer.write(crate::commands::GameCommand::Swipe(choice));
             }
         }
@@ -84,11 +85,14 @@ pub fn keyboard_input(
     if !slide.ready_for_input || slide.depth_showing { return; }
 
     if keys.just_pressed(KeyCode::ArrowRight) || keys.just_pressed(KeyCode::KeyD) {
+        info!("Keyboard swipe: Yes");
         writer.write(crate::commands::GameCommand::Swipe(SwipeChoice::Yes));
     } else if keys.just_pressed(KeyCode::ArrowLeft) || keys.just_pressed(KeyCode::KeyA) {
+        info!("Keyboard swipe: No");
         writer.write(crate::commands::GameCommand::Swipe(SwipeChoice::No));
     } else if keys.just_pressed(KeyCode::ArrowDown) || keys.just_pressed(KeyCode::KeyS)
         || keys.just_pressed(KeyCode::Space) {
+        info!("Keyboard swipe: Deeper");
         writer.write(crate::commands::GameCommand::Swipe(SwipeChoice::Deeper));
     }
 }
@@ -132,6 +136,7 @@ pub fn handle_ui_button_interactions(
     // 3. Quest Action Button (Flat screen)
     for interaction in quest_button {
         if *interaction == Interaction::Pressed {
+            info!("Quest Action button clicked");
             if *state.get() == GameState::Playing {
                 writer.write(crate::commands::GameCommand::StartQuest("Barnaby".to_string()));
             }
@@ -141,6 +146,7 @@ pub fn handle_ui_button_interactions(
     // 4. Battle Action Button (Flat screen)
     for interaction in battle_button {
         if *interaction == Interaction::Pressed {
+            info!("Battle Action button clicked");
             if *state.get() == GameState::Playing {
                 writer.write(crate::commands::GameCommand::StartBattle);
             }

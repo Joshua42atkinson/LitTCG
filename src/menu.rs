@@ -42,7 +42,7 @@ fn spawn_main_menu(
     ))
     .with_children(|parent| {
         parent.spawn((
-            Text::new("COMMUNICATION CLASS"),
+            Text::new("LitTTC"),
             TextFont { font_size: 50.0, ..default() },
             TextColor(Color::srgb(0.2, 0.8, 0.9)),
             Node { margin: UiRect::bottom(Val::Px(40.0)), ..default() },

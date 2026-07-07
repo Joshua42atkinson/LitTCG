@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "Proprietary"
 authors = ["Joshua Atkinson"]
-description = "LitTTC — VR EdTech Game in Bevy using OpenXR and FACES"
+description = "LitTTC — Literacy Tactical Trading Card: spell words to summon pets and battle typos"
 
 [lib]
 crate-type = ["lib", "cdylib"]

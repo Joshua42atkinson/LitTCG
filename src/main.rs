@@ -34,7 +34,7 @@ fn main() {
     app.add_plugins((
             DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
-                    title: "Communication Class — Bevy VR EdTech".to_string(),
+                    title: "LitTTC — Literacy Tactical Trading Card".to_string(),
                     resolution: bevy::window::WindowResolution::new(1280, 720),
                     canvas: Some("#daydream-canvas".to_string()),
                     fit_canvas_to_parent: true,

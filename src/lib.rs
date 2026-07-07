@@ -32,7 +32,7 @@ fn main() {
         android_logger::Config::default().with_max_level(log::LevelFilter::Info),
     );
 
-    info!("Initializing Communication Class Android XR Entry Point...");
+    info!("Initializing LitTTC Android XR Entry Point...");
 
     #[cfg(feature = "xr")]
     {

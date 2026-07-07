@@ -60,6 +60,24 @@ pub fn spawn_letter_crystals(
     ));
 }
 
+pub fn handle_pinch_crystals(
+    mut commands: Commands,
+    pinch_events: Res<crate::hand_tracking::PinchEvents>,
+    mut stash: ResMut<LetterStash>,
+    crystals: Query<(Entity, &Transform, &LetterCrystal)>,
+) {
+    for pinch in &pinch_events.events {
+        for (entity, transform, crystal) in crystals.iter() {
+            if transform.translation.distance(pinch.position) < 0.5 {
+                // Collect crystal
+                stash.letters.push(crystal.letter);
+                info!("Collected letter: {}", crystal.letter);
+                commands.entity(entity).despawn();
+            }
+        }
+    }
+}
+
 pub fn animate_crystals(
     time: Res<Time>,
     mut query: Query<(&mut Transform, &mut LetterCrystal)>,
@@ -104,6 +122,7 @@ pub fn handle_keyboard_spelling(
     materials: ResMut<Assets<StandardMaterial>>,
     spellbook: Res<SpellBook>,
     demo: Res<crate::paywall::DemoSettings>,
+    sheet: Res<CharacterSheet>,
 ) {
     // Collect all letters typed if they are in the stash
     for key in keys.get_just_pressed() {
@@ -137,6 +156,7 @@ pub fn handle_keyboard_spelling(
             materials,
             &spellbook,
             &demo,
+            &sheet,
         );
     }
 }
@@ -234,6 +254,7 @@ pub fn handle_vr_spelling(
     materials: ResMut<Assets<StandardMaterial>>,
     spellbook: Res<SpellBook>,
     demo: Res<crate::paywall::DemoSettings>,
+    sheet: Res<CharacterSheet>,
     letter_query: Query<(Entity, &GlobalTransform, &HolographicLetter)>,
     submit_query: Query<&GlobalTransform, With<SubmitSpellingButton>>,
 ) {
@@ -252,6 +273,7 @@ pub fn handle_vr_spelling(
                     materials,
                     &spellbook,
                     &demo,
+                    &sheet,
                 );
                 return;
             }
@@ -292,6 +314,7 @@ fn submit_spelling_word(
     mut materials: ResMut<Assets<StandardMaterial>>,
     spellbook: &Res<SpellBook>,
     demo: &Res<crate::paywall::DemoSettings>,
+    sheet: &Res<CharacterSheet>,
 ) {
     if demo.is_demo && spellbook.entries.len() >= demo.max_words {
         next_state.set(GameState::Paywall);
@@ -347,7 +370,7 @@ fn submit_spelling_word(
             logos: word_stats.concreteness * 20.0,
             pathos: word_stats.valence * 10.0,
             ethos: word_stats.dominance * 10.0,
-            speed: word_stats.arousal * 10.0,
+            speed: word_stats.intensity * 10.0,
         };
 
         // Classify emotive state using FACES detector
@@ -368,7 +391,10 @@ fn submit_spelling_word(
             Mesh3d(meshes.add(Sphere::new(0.5).mesh().ico(4).unwrap())),
             MeshMaterial3d(main_mat.clone()),
             Transform::from_xyz(0.0, 1.5, -2.0),
-            PetAvatar { word: spelling.word.clone() },
+            PetAvatar { 
+                word: spelling.word.clone(),
+                pet_type: sheet.active_summon_class,
+            },
             PetFacesState(detected.state), // Wrapped FacesState component
             PetVisualState::Happy,
             AvatarAnimation {
@@ -397,7 +423,10 @@ fn submit_spelling_word(
             Mesh3d(meshes.add(Sphere::new(0.5).mesh().ico(2).unwrap())),
             MeshMaterial3d(glitch_mat),
             Transform::from_xyz(0.0, 1.5, -2.0),
-            PetAvatar { word: spelling.word.clone() },
+            PetAvatar { 
+                word: spelling.word.clone(),
+                pet_type: sheet.active_summon_class,
+            },
             crate::components::UnstableWord { health: 100.0 },
             PetVisualState::Alert,
         ));

@@ -215,21 +215,38 @@ fn spawn_avatar_visuals(
         info!("Spawning visuals for pet: {}", avatar.word);
 
         let head_color = ansi_to_color(faces_state.0.aura.index());
+        let mut metallic_val = 0.8;
+        let mut roughness_val = 0.15;
+        
+        match avatar.pet_type {
+            SummonClass::GrammarGolem => {
+                metallic_val = 0.1;
+                roughness_val = 0.9;
+            }
+            SummonClass::RhetoricRobot => {
+                metallic_val = 1.0;
+                roughness_val = 0.05;
+            }
+            SummonClass::SemanticSlime => {}
+        }
+
         let head_mat = materials.add(StandardMaterial {
             base_color: head_color,
             emissive: (head_color.to_srgba() * 0.5).into(),
-            metallic: 0.8,
-            perceptual_roughness: 0.15,
+            metallic: metallic_val,
+            perceptual_roughness: roughness_val,
             ..default()
         });
 
-        // Determine Head Mesh based on Container
-        let head_mesh = match faces_state.0.container {
-            Container::Neutral => meshes.add(Sphere::new(0.5).mesh().ico(4).unwrap()),
-            Container::Rigid => meshes.add(Cuboid::new(0.8, 0.8, 0.8)),
-            Container::Fluid => meshes.add(Torus::new(0.15, 0.45)),
-            Container::Defensive => meshes.add(Cylinder::new(0.4, 0.8)),
-            Container::Sharp => meshes.add(Cone::new(0.5, 0.8)),
+        // Determine Head Mesh based on Container and Pet Type
+        let head_mesh = match (avatar.pet_type, faces_state.0.container) {
+            (SummonClass::GrammarGolem, _) => meshes.add(Cuboid::new(0.9, 0.9, 0.9)), // Golems are blocky
+            (SummonClass::RhetoricRobot, _) => meshes.add(Torus::new(0.2, 0.5)), // Robots are sleek tori
+            (SummonClass::SemanticSlime, Container::Neutral) => meshes.add(Sphere::new(0.5).mesh().ico(4).unwrap()),
+            (SummonClass::SemanticSlime, Container::Rigid) => meshes.add(Cuboid::new(0.8, 0.8, 0.8)),
+            (SummonClass::SemanticSlime, Container::Fluid) => meshes.add(Torus::new(0.15, 0.45)),
+            (SummonClass::SemanticSlime, Container::Defensive) => meshes.add(Cylinder::new(0.4, 0.8)),
+            (SummonClass::SemanticSlime, Container::Sharp) => meshes.add(Cone::new(0.5, 0.8)),
         };
 
         let lower_archetype = match faces_state.0.container {
@@ -595,6 +612,7 @@ impl Plugin for RenderPlugin {
            .add_systems(Update, (
                spawn_2d_pet_avatars,
                update_2d_pet_expressions,
+               update_slime_visuals,
            ));
     }
 }
@@ -681,6 +699,29 @@ fn update_2d_pet_expressions(
         sprite.color = color;
     }
 }
+
+#[cfg(feature = "flat2d")]
+pub fn update_slime_visuals(
+    time: Res<Time>,
+    mut query: Query<(&PetAvatar2D, &mut Sprite, &mut Transform)>,
+) {
+    for (avatar, mut sprite, mut transform) in query.iter_mut() {
+        let scale_factor = 0.5 + (avatar.concreteness * 1.5);
+        let base_scale = Vec3::splat(scale_factor);
+        
+        let tint = if avatar.valence >= 0.0 {
+            Color::srgb(1.0, 0.9, 0.5 * avatar.valence)
+        } else {
+            Color::srgb(0.5, 0.6, 1.0 + avatar.valence)
+        };
+        
+        sprite.color = tint;
+        
+        let pulse = (time.elapsed_secs() * (1.0 + avatar.intensity * 5.0)).sin() * 0.1;
+        transform.scale = base_scale + Vec3::splat(pulse);
+    }
+}
+
 
 #[cfg(not(feature = "flat2d"))]
 fn apply_screen_shake(

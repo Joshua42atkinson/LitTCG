@@ -11,25 +11,34 @@ pub struct BattleSession {
     pub player_health: i32,
 }
 
+#[derive(Component)]
+pub struct CriticalHitTrigger;
+
 pub fn semantic_distance(a: &WordStats, b: &WordStats) -> f32 {
     let dc = a.concreteness - b.concreteness;
     let dv = a.valence - b.valence;
     let dd = a.dominance - b.dominance;
-    let da = a.arousal - b.arousal;
+    let da = a.intensity - b.intensity;
     (dc*dc + dv*dv + dd*dd + da*da).sqrt()
 }
 
 pub fn start_battle(
     commands: &mut Commands,
     db: &GameDatabase,
+    curriculum: &crate::quest::CurriculumManager,
     next_state: &mut NextState<GameState>,
 ) {
     use rand::seq::SliceRandom;
     use rand::thread_rng;
 
-    let valid_words: Vec<&String> = db.words.keys().collect();
+    let valid_grades = curriculum.get_valid_grade_levels();
 
-    let mut typo_word = "inferno".to_string();
+    let valid_words: Vec<&String> = db.words.iter()
+        .filter(|(_, stats)| valid_grades.contains(&stats.grade_level.as_str()))
+        .map(|(word, _)| word)
+        .collect();
+
+    let mut typo_word = "inferno".to_string(); // fallback
     if let Some(&word) = valid_words.choose(&mut thread_rng()) {
         typo_word = word.clone();
     }
@@ -44,28 +53,102 @@ pub fn start_battle(
     next_state.set(GameState::Battling);
 }
 
+pub struct BattleResult {
+    pub is_effective: bool,
+    pub social_combat_triggered: bool,
+    pub is_synonym_logic: bool,
+}
+
 pub fn play_battle_card(
     played_word: &str,
     session: &mut BattleSession,
     db: &GameDatabase,
     spellbook: &mut SpellBook,
     next_state: &mut NextState<GameState>,
-) -> bool {
+    sheet: &CharacterSheet,
+) -> BattleResult {
     let lower_typo = session.typo_word.to_lowercase();
     let lower_played = played_word.to_lowercase();
 
     let mut damage_multiplier = 1.0;
     let mut is_effective = false;
+    let mut social_combat_triggered = false;
+    let mut is_synonym_logic = false;
 
     if let (Some(typo_stats), Some(played_stats)) = (db.words.get(&lower_typo), db.words.get(&lower_played)) {
-        let distance = semantic_distance(typo_stats, played_stats);
-        
-        // Emergent counters: high distance = opposing concepts (e.g. Fire vs Water)
-        if distance > 4.0 {
-            damage_multiplier = 1.5 + (distance - 4.0) * 0.2;
-            is_effective = true;
-        } else if distance < 2.0 {
-            damage_multiplier = 0.5;
+        if sheet.active_summon_class == SummonClass::RhetoricRobot {
+            let logos_diff = (typo_stats.concreteness - played_stats.concreteness).abs();
+            let pathos_diff = (((typo_stats.intensity + typo_stats.valence) / 2.0) - ((played_stats.intensity + played_stats.valence) / 2.0)).abs();
+            let ethos_diff = (typo_stats.dominance - played_stats.dominance).abs();
+
+            social_combat_triggered = true;
+
+            if logos_diff > pathos_diff && logos_diff > ethos_diff {
+                // Structural Paradox (Logos dominant)
+                is_synonym_logic = false;
+                damage_multiplier = 2.5;
+                is_effective = true;
+            } else {
+                // Semantic Equivalence (Pathos/Ethos dominant)
+                is_synonym_logic = true;
+                damage_multiplier = 2.5;
+                is_effective = true;
+            }
+        } else if sheet.active_summon_class == SummonClass::GrammarGolem {
+            let mut shared_root = false;
+            let mut shared_suffix = false;
+            let mut has_own_root = false;
+            let mut has_own_suffix = false;
+
+            // Check roots
+            for root in db.etymology.roots.keys() {
+                let root_lower = root.to_lowercase();
+                let played_has = lower_played.contains(&root_lower);
+                let typo_has = lower_typo.contains(&root_lower);
+                if played_has {
+                    has_own_root = true;
+                }
+                if played_has && typo_has {
+                    shared_root = true;
+                }
+            }
+
+            // Check suffixes
+            for suffix in db.etymology.suffixes.keys() {
+                let suffix_lower = suffix.to_lowercase();
+                let played_has = lower_played.ends_with(&suffix_lower);
+                let typo_has = lower_typo.ends_with(&suffix_lower);
+                if played_has {
+                    has_own_suffix = true;
+                }
+                if played_has && typo_has {
+                    shared_suffix = true;
+                }
+            }
+
+            if shared_root { damage_multiplier += 0.5; }
+            if shared_suffix { damage_multiplier += 0.5; }
+
+            if has_own_root && has_own_suffix {
+                // Perfect grammatical integrity!
+                damage_multiplier += 0.5; 
+            }
+            
+            if damage_multiplier > 1.0 {
+                is_effective = true;
+            } else {
+                damage_multiplier = 0.5;
+            }
+        } else {
+            let distance = semantic_distance(typo_stats, played_stats);
+            
+            // Emergent counters: high distance = opposing concepts (e.g. Fire vs Water)
+            if distance > 4.0 {
+                damage_multiplier = 1.5 + (distance - 4.0) * 0.2;
+                is_effective = true;
+            } else if distance < 2.0 {
+                damage_multiplier = 0.5;
+            }
         }
     }
 
@@ -91,7 +174,11 @@ pub fn play_battle_card(
         next_state.set(GameState::Playing);
     }
 
-    is_effective
+    BattleResult {
+        is_effective,
+        social_combat_triggered,
+        is_synonym_logic,
+    }
 }
 
 #[derive(Component)]
@@ -112,10 +199,52 @@ impl Plugin for BattlePlugin {
            .add_systems(Update, update_battle_hp_bars_xr.run_if(in_state(GameState::Battling)))
            .add_systems(OnExit(GameState::Battling), (cleanup_battle_ui_xr, set_pet_idle_state));
 
+        #[cfg(not(feature = "flat2d"))]
+        app.add_systems(Update, handle_critical_hit_effects);
+
         #[cfg(not(feature = "xr"))]
         app.add_systems(OnEnter(GameState::Battling), (spawn_battle_ui_2d, set_pet_battle_state))
            .add_systems(Update, update_battle_hp_bars_2d.run_if(in_state(GameState::Battling)))
            .add_systems(OnExit(GameState::Battling), (cleanup_battle_ui_2d, set_pet_idle_state));
+    }
+}
+
+#[cfg(not(feature = "flat2d"))]
+pub fn handle_critical_hit_effects(
+    trigger_query: Query<Entity, With<CriticalHitTrigger>>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    camera_query: Query<Entity, With<Camera>>,
+) {
+    for trigger_entity in trigger_query.iter() {
+        commands.entity(trigger_entity).despawn();
+        
+        for entity in &camera_query {
+            commands.entity(entity).insert(crate::render::ScreenShake { timer: 0.3, intensity: 0.2 });
+        }
+        
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        for _ in 0..30 {
+            let vx = rng.gen_range(-4.0..4.0);
+            let vy = rng.gen_range(2.0..6.0);
+            let vz = rng.gen_range(-4.0..4.0);
+            
+            commands.spawn((
+                Mesh3d(meshes.add(Sphere::new(0.06).mesh().ico(1).unwrap())),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: Color::srgb(1.0, 0.9, 0.1),
+                    emissive: Color::srgb(2.0, 1.8, 0.2).into(),
+                    ..default()
+                })),
+                Transform::from_xyz(0.0, 1.5, -2.0),
+                crate::render::BurstParticle {
+                    velocity: Vec3::new(vx, vy, vz),
+                    timer: 1.5,
+                }
+            ));
+        }
     }
 }
 

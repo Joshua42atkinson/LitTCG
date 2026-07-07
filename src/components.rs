@@ -76,6 +76,18 @@ pub struct CharacterSheet {
     pub words_encountered: u32,
     pub total_deeper_swipes: u32,
     pub total_xp: u64,
+    #[serde(default = "default_summon_class")]
+    pub active_summon_class: SummonClass,
+    #[serde(default = "default_arm_length")]
+    pub arm_length: f32,
+}
+
+fn default_arm_length() -> f32 {
+    0.65
+}
+
+fn default_summon_class() -> SummonClass {
+    SummonClass::SemanticSlime
 }
 
 impl Default for CharacterSheet {
@@ -89,18 +101,20 @@ impl Default for CharacterSheet {
             words_encountered: 0,
             total_deeper_swipes: 0,
             total_xp: 0,
+            active_summon_class: SummonClass::SemanticSlime,
+            arm_length: 0.65,
         }
     }
 }
 
 impl CharacterSheet {
     pub fn engage_channel(&mut self, channel: &Channel) {
-        let bump = 0.05;
+        let bump = 0.1; // Asymptotic bump multiplier
         match channel {
-            Channel::Mind   => self.mind_attunement = (self.mind_attunement + bump).min(1.0),
-            Channel::Heart  => self.heart_attunement = (self.heart_attunement + bump).min(1.0),
-            Channel::Body   => self.body_attunement = (self.body_attunement + bump).min(1.0),
-            Channel::Action => self.action_attunement = (self.action_attunement + bump).min(1.0),
+            Channel::Mind   => self.mind_attunement += (1.0 - self.mind_attunement) * bump,
+            Channel::Heart  => self.heart_attunement += (1.0 - self.heart_attunement) * bump,
+            Channel::Body   => self.body_attunement += (1.0 - self.body_attunement) * bump,
+            Channel::Action => self.action_attunement += (1.0 - self.action_attunement) * bump,
         }
         self.update_class();
     }
@@ -112,6 +126,14 @@ impl CharacterSheet {
             (self.body_attunement,   "Body"),
             (self.action_attunement, "Action"),
         ];
+
+        let max_score = scores.iter().map(|s| s.0).fold(0.0, f32::max);
+        
+        // Require a minimum attunement threshold before manifesting an emergent class
+        if max_score < 0.2 {
+            self.emergent_class = "Newcomer".to_string();
+            return;
+        }
 
         let dominant = scores.iter()
             .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
@@ -200,6 +222,7 @@ pub struct CurrentSlide {
 #[derive(Resource, Debug, Default)]
 pub struct Deck {
     pub cards: Vec<String>, // Words in the deck
+    pub active_summon_class: Option<SummonClass>,
 }
 
 #[derive(Resource, Debug)]
@@ -306,6 +329,7 @@ pub struct PetStats {
 #[derive(Component)]
 pub struct PetAvatar {
     pub word: String,
+    pub pet_type: SummonClass,
 }
 
 #[derive(Component)]
@@ -346,3 +370,48 @@ pub enum GameState {
     Reviewing,
     Paywall,
 }
+
+// ─── 2D PROTOTYPE STATE & RESOURCES ──────────────────────────────
+
+#[derive(States, Default, Clone, Eq, PartialEq, Debug, Hash)]
+pub enum BattleState {
+    #[default]
+    Draw,
+    Play,
+    Shuffle,
+}
+
+#[derive(Resource)]
+pub struct GameGrid {
+    pub width: u32,
+    pub height: u32,
+    pub cell_size: f32,
+}
+
+impl Default for GameGrid {
+    fn default() -> Self {
+        Self {
+            width: 16,
+            height: 16,
+            cell_size: 40.0,
+        }
+    }
+}
+
+#[derive(Resource, Default)]
+pub struct ActiveGestures {
+    pub traces: std::collections::HashMap<u64, Vec<bevy::math::Vec2>>,
+}
+
+#[derive(Component)]
+pub struct DraggableCard {
+    pub touch_id: Option<u64>,
+}
+
+#[derive(Component)]
+pub struct PetAvatar2D {
+    pub valence: f32,
+    pub intensity: f32,
+    pub concreteness: f32,
+}
+

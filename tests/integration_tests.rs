@@ -21,6 +21,35 @@ fn test_database_loading() {
 }
 
 #[test]
+fn test_database_schema_validation() {
+    let db = GameDatabase::load_from_embedded().expect("Database should load");
+    
+    // Validate WordStats constraints
+    for (word, stats) in &db.words {
+        assert!(stats.concreteness >= 0.0 && stats.concreteness <= 5.0, "Word '{}' concreteness out of bounds: {}", word, stats.concreteness);
+        assert!(stats.valence >= 0.0 && stats.valence <= 9.0, "Word '{}' valence out of bounds: {}", word, stats.valence);
+        assert!(stats.intensity >= 0.0 && stats.intensity <= 9.0, "Word '{}' intensity out of bounds: {}", word, stats.intensity);
+        assert!(stats.dominance >= 0.0 && stats.dominance <= 9.0, "Word '{}' dominance out of bounds: {}", word, stats.dominance);
+        assert!(!stats.grade_level.is_empty(), "Word '{}' missing grade level", word);
+    }
+    
+    // Validate Synonym constraints
+    for (word, syn_data) in &db.synonyms {
+        assert!(!syn_data.element.is_empty(), "Synonym entry '{}' missing element", word);
+        for syn in &syn_data.synonyms {
+            assert!(!syn.is_empty(), "Synonym for '{}' is empty", word);
+        }
+    }
+
+    // Validate Etymology constraints
+    for (root, data) in &db.etymology.roots {
+        assert!(!data.element.is_empty(), "Root '{}' missing element", root);
+        assert!(!data.stat_focus.is_empty(), "Root '{}' missing stat focus", root);
+        assert!(data.color.len() == 3, "Root '{}' color must be RGB", root);
+    }
+}
+
+#[test]
 fn test_quest_progression() {
     let mut db = GameDatabase::load_from_embedded().unwrap();
     let mut queue1 = bevy::ecs::world::CommandQueue::default();
@@ -60,11 +89,13 @@ fn test_quest_progression() {
     let mut queue2 = bevy::ecs::world::CommandQueue::default();
     let mut world2 = World::new();
     let mut test_commands = Commands::new(&mut queue2, &world2);
+    let mut curriculum = quest::CurriculumManager::default();
     
     quest::complete_quest(
         &session,
         &mut sheet,
         &mut spellbook,
+        &mut curriculum,
         &mut test_next_state,
         &mut test_commands,
     );
@@ -84,18 +115,41 @@ fn test_battle_combat_mechanics() {
     
     let mut spellbook = SpellBook::default();
     let mut next_state = NextState::default();
+    let sheet = CharacterSheet::default();
     
     // Play a word with high semantic distance (effective): "abc" vs "abandoned"
-    let is_effective_1 = battle::play_battle_card("abc", &mut session, &db, &mut spellbook, &mut next_state);
-    assert!(is_effective_1, "Playing abc should be semantically effective");
-    assert_eq!(session.typo_health, 48, "Effective card should damage typo");
+    let result_1 = battle::play_battle_card("abc", &mut session, &db, &mut spellbook, &mut next_state, &sheet);
+    assert!(result_1.is_effective, "Playing abc should be semantically effective");
+    assert_eq!(session.typo_health, 32, "Effective card should damage typo");
     assert_eq!(session.player_health, 100, "Effective card should not damage player");
     
     // Play a word with low semantic distance (ineffective): "abandoned" vs "abandoned"
-    let is_effective_2 = battle::play_battle_card("abandoned", &mut session, &db, &mut spellbook, &mut next_state);
-    assert!(!is_effective_2, "Playing identical word should be ineffective");
-    assert_eq!(session.typo_health, 36, "Ineffective card should do minor damage");
+    let result_2 = battle::play_battle_card("abandoned", &mut session, &db, &mut spellbook, &mut next_state, &sheet);
+    assert!(!result_2.is_effective, "Playing identical word should be ineffective");
+    assert_eq!(session.typo_health, 20, "Ineffective card should do minor damage");
     assert_eq!(session.player_health, 80, "Ineffective card should result in typo counter-attack");
+}
+
+#[test]
+fn test_rhetoric_robot_combat_mechanics() {
+    let db = GameDatabase::load_from_embedded().unwrap();
+    let mut session = BattleSession {
+        typo_word: "abandoned".to_string(),
+        typo_health: 100,
+        player_health: 100,
+    };
+    
+    let mut spellbook = SpellBook::default();
+    let mut next_state = NextState::default();
+    let mut sheet = CharacterSheet::default();
+    sheet.active_summon_class = SummonClass::RhetoricRobot;
+    
+    // Play a word. Rhetoric Robot triggers social combat.
+    let result = battle::play_battle_card("abc", &mut session, &db, &mut spellbook, &mut next_state, &sheet);
+    
+    assert!(result.social_combat_triggered, "Rhetoric Robot should trigger social combat");
+    assert!(result.is_effective, "Rhetoric attack should be highly effective");
+    assert_eq!(session.typo_health, 38, "Rhetoric attack deals massive 2.5x damage (25 * 2.5 = 62. 100 - 62 = 38)");
 }
 
 #[test]
@@ -109,6 +163,8 @@ fn test_local_save_system() {
         words_encountered: 12,
         total_deeper_swipes: 4,
         total_xp: 450,
+        active_summon_class: SummonClass::SemanticSlime,
+        arm_length: 0.65,
     };
     
     let mut spellbook = SpellBook::default();
@@ -180,6 +236,7 @@ fn test_curriculum_and_dialogue() {
     let mut curriculum = CurriculumManager {
         active_grade: 1,
         progress_xp: 0,
+        unlocked_districts: vec!["The Phoneme Forest".to_string()],
     };
     
     assert_eq!(curriculum.get_grade_level(), "Grade 1");

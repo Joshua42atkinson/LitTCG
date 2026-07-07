@@ -62,8 +62,8 @@ pub struct WordStats {
     pub age_of_acquisition: u32,
     #[serde(rename = "V")]
     pub valence: f32,
-    #[serde(rename = "A")]
-    pub arousal: f32,
+    #[serde(rename = "A", alias = "arousal")]
+    pub intensity: f32,
     #[serde(rename = "D")]
     pub dominance: f32,
     #[serde(rename = "GradeLevel")]
@@ -122,6 +122,16 @@ pub struct EtymologyDB {
     pub whitelist: HashMap<String, Vec<String>>,
 }
 
+impl Default for EtymologyDB {
+    fn default() -> Self {
+        Self {
+            roots: HashMap::new(),
+            suffixes: HashMap::new(),
+            whitelist: HashMap::new(),
+        }
+    }
+}
+
 #[derive(Deserialize, Clone, Debug)]
 pub struct QuestTemplate {
     #[serde(rename = "Title")]
@@ -162,6 +172,15 @@ pub struct QuestData {
     pub npc_chains: HashMap<String, Vec<NpcQuest>>,
 }
 
+impl Default for QuestData {
+    fn default() -> Self {
+        Self {
+            archetype_quests: HashMap::new(),
+            npc_chains: HashMap::new(),
+        }
+    }
+}
+
 #[derive(Deserialize, Clone, Debug)]
 pub struct NpcDialogue {
     #[serde(rename = "Dawn")]
@@ -186,6 +205,8 @@ pub struct NpcData {
     pub preferred_class: Vec<String>,
     #[serde(rename = "Teaches")]
     pub teaches: Vec<String>,
+    #[serde(rename = "AvatarPath")]
+    pub avatar_path: Option<String>,
     #[serde(rename = "EvolutionRole")]
     pub evolution_role: String,
     #[serde(rename = "Dialogue")]
@@ -199,6 +220,18 @@ pub struct GameDatabase {
     pub etymology: EtymologyDB,
     pub quests: QuestData,
     pub npcs: HashMap<String, NpcData>,
+}
+
+impl Default for GameDatabase {
+    fn default() -> Self {
+        Self {
+            words: HashMap::new(),
+            synonyms: HashMap::new(),
+            etymology: EtymologyDB::default(),
+            quests: QuestData::default(),
+            npcs: HashMap::new(),
+        }
+    }
 }
 
 impl GameDatabase {

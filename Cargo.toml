@@ -1,17 +1,17 @@
 [package]
-name = "lit-ttc"
+name = "lit-tcg"
 version = "0.1.0"
 edition = "2021"
 license = "Proprietary"
 authors = ["Joshua Atkinson"]
-description = "LitTTC — Literacy Tactical Trading Card: spell words to summon pets and battle typos"
+description = "LitTCG — Literary Trading Card Game: spell words to summon pets and battle typos"
 
 [lib]
 crate-type = ["lib", "cdylib"]
-name = "lit_ttc"
+name = "lit_tcg"
 
 [[bin]]
-name = "lit-ttc-desktop"
+name = "lit-tcg-desktop"
 path = "src/main.rs"
 
 [features]
@@ -124,7 +124,7 @@ android_logger = "0.15"
 jni = { version = "0.21", default-features = false }
 
 [package.metadata.android]
-package = "com.litttc.game"
+package = "com.littcg.game"
 build_targets = ["aarch64-linux-android"]
 min_sdk_version = 30
 target_sdk_version = 36

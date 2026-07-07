@@ -1,4 +1,4 @@
-# LitTTC — Autonomous Task Tracker
+# LitTCG — Autonomous Task Tracker
 
 > Single source of truth for Windsurf (orchestrator) + Claude Code (executor).
 > Synced with MASTER_TASK_LIST.md (285 tasks across 10 phases).
@@ -74,7 +74,7 @@
   - Commit: "P1.5.2: Add input action logging"
 
 ### P1.5.3: Create .gitignore for build artifacts
-- [x] Add/Update `.gitignore` in LitTTC/
+- [x] Add/Update `.gitignore` in LitTCG/
   - Ignore: /target, /dist, *.wasm, *.js (in dist), overnight.log
   - Keep: src/, assets/, tests/, Cargo.toml, Cargo.lock
   - Commit: "P1.5.3: Update .gitignore for build artifacts"

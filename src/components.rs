@@ -1,4 +1,4 @@
-// components.rs — ECS Components and Resources for LitTTC
+// components.rs — ECS Components and Resources for LitTCG
 #![allow(dead_code)]
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};

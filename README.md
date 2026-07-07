@@ -1,17 +1,17 @@
-# LitTTC — Literacy Tactical Trading Card
+# LitTCG — Literary Trading Card Game
 
 > *Every word is a card. Every card is a creature.*
 
-LitTTC is a Bevy 0.18.1 XR EdTech game where kids spell real English words to summon unique 3D pets, then use those pets in tactical battles and grammar quests. Each pet's element, stats, face, and combat moves come from the word's actual meaning.
+LitTCG is a Bevy 0.18.1 XR EdTech game where kids spell real English words to summon unique 3D pets, then use those pets in tactical battles and grammar quests. Each pet's element, stats, face, and combat moves come from the word's actual meaning.
 
 - 🌟 **Spell & Summon** — Build words from letter crystals and watch them become collectible pets.
 - ⚔️ **Battle Wild Typos** — Use synonyms, antonyms, and etymology roots in turn-based combat.
 - 🏛️ **Complete Grammar Quests** — Fill Mad-Lib slots with the right parts of speech to help NPCs.
 - 🎴 **Collect & Evolve** — Master words to evolve pets and unlock golden auras and dream poetry.
 
-## Why LitTTC?
+## Why LitTCG?
 
-Traditional literacy apps feel like dressed-up worksheets. LitTTC uses **isomorphism**: the game mechanic *is* the skill being taught.
+Traditional literacy apps feel like dressed-up worksheets. LitTCG uses **isomorphism**: the game mechanic *is* the skill being taught.
 
 - **Spelling IS summoning**
 - **Synonyms ARE combat attacks**
@@ -68,4 +68,4 @@ Proprietary — Joshua Atkinson
 
 ---
 
-*LitTTC — The learning is the playing. The playing is the learning.*
+*LitTCG — The learning is the playing. The playing is the learning.*

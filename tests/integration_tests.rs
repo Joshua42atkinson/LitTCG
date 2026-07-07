@@ -1,15 +1,15 @@
 // integration_tests.rs — End-to-End Integration and Pedagogical Tests
 #![allow(unused)]
-use lit_ttc::components::*;
-use lit_ttc::database::GameDatabase;
-use lit_ttc::quest::{self, QuestSession};
-use lit_ttc::battle::{self, BattleSession};
-use lit_ttc::save::{self, SaveData};
-use lit_ttc::blocklist;
-use lit_ttc::commands::{GameCommand, LastCommand, handle_game_commands};
-use lit_ttc::chat;
-use lit_ttc::letter;
-use lit_ttc::paywall;
+use lit_tcg::components::*;
+use lit_tcg::database::GameDatabase;
+use lit_tcg::quest::{self, QuestSession};
+use lit_tcg::battle::{self, BattleSession};
+use lit_tcg::save::{self, SaveData};
+use lit_tcg::blocklist;
+use lit_tcg::commands::{GameCommand, LastCommand, handle_game_commands};
+use lit_tcg::chat;
+use lit_tcg::letter;
+use lit_tcg::paywall;
 use bevy::prelude::*;
 use std::collections::HashMap;
 
@@ -205,7 +205,7 @@ fn test_local_save_system() {
 
 #[test]
 fn test_pet_chat_taming() {
-    use lit_ttc::chat::{self, ChatLog};
+    use lit_tcg::chat::{self, ChatLog};
     use faces_protocol::{Focus, Action};
 
     let mut app = App::new();
@@ -230,7 +230,7 @@ fn test_pet_chat_taming() {
 
 #[test]
 fn test_curriculum_and_dialogue() {
-    use lit_ttc::quest::{self, CurriculumManager};
+    use lit_tcg::quest::{self, CurriculumManager};
 
     let db = GameDatabase::load_from_embedded().unwrap();
     

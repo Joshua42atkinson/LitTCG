@@ -45,7 +45,7 @@ fn update_tutorial_2d(
 
     if query.is_empty() && state.step < 4 {
         let text = match state.step {
-            0 => "Welcome to LitTTC!\nLook around the VR environment.",
+            0 => "Welcome to LitTCG!\nLook around the VR environment.",
             1 => "Reach out and Pinch the blue crystals\nto collect letters for your Stash.",
             2 => "Pinch the 'Construct' floating button\nto spell a word with your physical blocks.",
             3 => "Pinch 'Quest' or 'Battle' to use your\nwords in action! (Pinch the air to close)",
@@ -110,7 +110,7 @@ fn update_tutorial_xr(
 
     if query.is_empty() && state.step < 4 {
         let text = match state.step {
-            0 => "Welcome to LitTTC!\nLook around the VR environment.",
+            0 => "Welcome to LitTCG!\nLook around the VR environment.",
             1 => "Reach out and Pinch the blue crystals\nto collect letters for your Stash.",
             2 => "Pinch the 'Construct' floating button\nto spell a word with your blocks.",
             3 => "Pinch 'Quest' or 'Battle' to use your\nwords in action!",

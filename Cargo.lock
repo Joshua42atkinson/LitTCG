@@ -1894,32 +1894,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "communication-class"
-version = "0.1.0"
-dependencies = [
- "android_logger",
- "anyhow",
- "bevy",
- "bevy_mod_openxr",
- "bevy_mod_xr",
- "bevy_panorbit_camera",
- "bevy_reflect",
- "chrono",
- "faces-protocol",
- "getrandom 0.2.17",
- "jni 0.21.1",
- "log",
- "rand 0.8.6",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3464,6 +3438,32 @@ name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
+
+[[package]]
+name = "lit-ttc"
+version = "0.1.0"
+dependencies = [
+ "android_logger",
+ "anyhow",
+ "bevy",
+ "bevy_mod_openxr",
+ "bevy_mod_xr",
+ "bevy_panorbit_camera",
+ "bevy_reflect",
+ "chrono",
+ "faces-protocol",
+ "getrandom 0.2.17",
+ "jni 0.21.1",
+ "log",
+ "rand 0.8.6",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
 
 [[package]]
 name = "litemap"

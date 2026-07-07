@@ -108,7 +108,7 @@ pub fn complete_quest(
         if let Some(s_class) = summon_class {
             match s_class {
                 SummonClass::SemanticSlime => {
-                    info!("Semantic Slime consumed a word for evolution!");
+                    info!("LitTTC Slime consumed a word for evolution!");
                     _bonus_evolution += 5; // Extra evolution points for fluid semantics
                 },
                 SummonClass::GrammarGolem => {

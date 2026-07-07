@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- AndroidManifest.xml for Communication Class -->
+<!-- AndroidManifest.xml for LitTTC -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.communicationclass.game"
+    package="com.litttc.game"
     android:versionCode="1"
     android:versionName="0.1.0">
 
@@ -28,14 +28,14 @@
     <application
         android:debuggable="false"
         android:hasCode="false"
-        android:label="Communication Class">
+        android:label="LitTTC">
 
         <activity
             android:name="android.app.NativeActivity"
             android:configChanges="orientation|keyboardHidden|screenSize"
             android:exported="true">
 
-            <meta-data android:name="android.app.lib_name" android:value="communication_class" />
+            <meta-data android:name="android.app.lib_name" android:value="lit_ttc" />
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

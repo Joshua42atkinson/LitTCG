@@ -1,17 +1,17 @@
 [package]
-name = "communication-class"
+name = "lit-ttc"
 version = "0.1.0"
 edition = "2021"
 license = "Proprietary"
 authors = ["Joshua Atkinson"]
-description = "Communication Class — VR EdTech Game in Bevy using OpenXR and FACES"
+description = "LitTTC — VR EdTech Game in Bevy using OpenXR and FACES"
 
 [lib]
 crate-type = ["lib", "cdylib"]
-name = "communication_class"
+name = "lit_ttc"
 
 [[bin]]
-name = "communication-class-desktop"
+name = "lit-ttc-desktop"
 path = "src/main.rs"
 
 [features]
@@ -124,7 +124,7 @@ android_logger = "0.15"
 jni = { version = "0.21", default-features = false }
 
 [package.metadata.android]
-package = "com.communicationclass.game"
+package = "com.litttc.game"
 build_targets = ["aarch64-linux-android"]
 min_sdk_version = 30
 target_sdk_version = 36

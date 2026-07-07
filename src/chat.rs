@@ -3,8 +3,6 @@ use bevy::prelude::*;
 use faces_protocol::{Focus, Action, Aura};
 use crate::components::*;
 use crate::spatial_ui::*;
-#[cfg(all(feature = "tts", not(target_arch = "wasm32")))]
-use std::io::Write;
 
 pub struct ChatPlugin;
 
@@ -190,7 +188,11 @@ pub fn get_pet_dialogue(
 
 pub fn speak_dialogue(text: String, voice: String, commands: &mut Commands, asset_server: &Res<AssetServer>) {
     #[cfg(all(feature = "tts", not(target_arch = "wasm32")))]
-    bevy::tasks::IoTaskPool::get().spawn(async move {
+    {
+        // Parameters are only used by the fallback branch on wasm32 or without tts feature.
+        let _ = commands;
+        let _ = asset_server;
+        bevy::tasks::IoTaskPool::get().spawn(async move {
         // Send POST to Kokoro TTS sidecar
         // Path: http://localhost:8200/v1/audio/speech (OpenAI TTS compatible API)
         let client = reqwest::Client::new();
@@ -225,6 +227,7 @@ pub fn speak_dialogue(text: String, voice: String, commands: &mut Commands, asse
             }
         }
     }).detach();
+    }
 
     #[cfg(any(not(feature = "tts"), target_arch = "wasm32"))]
     {

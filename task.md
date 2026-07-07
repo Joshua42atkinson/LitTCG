@@ -112,7 +112,7 @@
 ## Phase 2: Bridge Isolation & WASM (Windsurf — architecture)
 
 ### P2.1: Feature-gate TTS for WASM
-- [ ] **Windsurf task** — Gate `chat.rs` Kokoro TTS behind `#[cfg(not(target_arch = "wasm32"))]`
+- [x] **Windsurf task** — Gate `chat.rs` Kokoro TTS behind `#[cfg(not(target_arch = "wasm32"))]`
 
 ### P2.2: Directory split
 - [ ] **Windsurf task** — Split into src/core/ + src/bridge/

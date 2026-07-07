@@ -260,10 +260,12 @@ fn spawn_avatar_visuals(
             Container::Sharp => "sharp",
         };
         let asset_relative = format!("pets/{}.glb", lower_archetype);
-        let asset_full = format!("assets/{}", asset_relative);
-        
+
         #[cfg(not(target_arch = "wasm32"))]
-        let has_gltf = std::path::Path::new(&asset_full).exists();
+        let has_gltf = {
+            let asset_full = format!("assets/{}", asset_relative);
+            std::path::Path::new(&asset_full).exists()
+        };
         #[cfg(target_arch = "wasm32")]
         let has_gltf = false;
 

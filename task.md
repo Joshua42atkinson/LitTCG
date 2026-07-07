@@ -118,7 +118,7 @@
 - [ ] **Windsurf task** — Split into src/core/ + src/bridge/
 
 ### P2.3: WASM build script
-- [ ] **Windsurf task** — Create build_wasm.sh with trunk + wasm-opt
+- [x] **Windsurf task** — Create build_wasm.sh with trunk + wasm-opt
 
 ---
 

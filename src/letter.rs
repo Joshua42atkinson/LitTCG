@@ -113,51 +113,21 @@ pub fn collect_letters(
 #[cfg(not(feature = "xr"))]
 pub fn handle_keyboard_spelling(
     keys: Res<ButtonInput<KeyCode>>,
-    mut spelling: ResMut<CurrentSpelling>,
-    mut stash: ResMut<LetterStash>,
-    mut next_state: ResMut<NextState<GameState>>,
-    db: Res<GameDatabase>,
-    mut commands: Commands,
-    meshes: ResMut<Assets<Mesh>>,
-    materials: ResMut<Assets<StandardMaterial>>,
-    spellbook: Res<SpellBook>,
-    demo: Res<crate::paywall::DemoSettings>,
-    sheet: Res<CharacterSheet>,
+    mut writer: MessageWriter<crate::commands::GameCommand>,
 ) {
-    // Collect all letters typed if they are in the stash
     for key in keys.get_just_pressed() {
         if let Some(c) = key_to_char(*key) {
-            let upper_c = c.to_ascii_uppercase();
-            if let Some(pos) = stash.letters.iter().position(|&x| x == upper_c) {
-                stash.letters.remove(pos);
-                spelling.word.push(upper_c);
-                info!("Current spelling: {}", spelling.word);
-            }
+            writer.write(crate::commands::GameCommand::AddLetter(c));
         }
     }
 
-    // Backspace
     if keys.just_pressed(KeyCode::Backspace) {
-        if let Some(c) = spelling.word.pop() {
-            stash.letters.push(c);
-        }
+        writer.write(crate::commands::GameCommand::Backspace);
     }
 
-    // Submit
     if keys.just_pressed(KeyCode::Enter) {
         info!("Submitting word via keyboard!");
-        submit_spelling_word(
-            &mut *spelling,
-            &mut *stash,
-            &mut *next_state,
-            &*db,
-            &mut commands,
-            meshes,
-            materials,
-            &*spellbook,
-            &*demo,
-            &*sheet,
-        );
+        writer.write(crate::commands::GameCommand::SubmitSpelling);
     }
 }
 
@@ -245,16 +215,8 @@ pub fn spawn_holographic_stash(
 #[cfg(feature = "xr")]
 pub fn handle_vr_spelling(
     pinch_events: Res<crate::hand_tracking::PinchEvents>,
-    mut spelling: ResMut<CurrentSpelling>,
-    mut stash: ResMut<LetterStash>,
-    mut next_state: ResMut<NextState<GameState>>,
-    db: Res<GameDatabase>,
+    mut writer: MessageWriter<crate::commands::GameCommand>,
     mut commands: Commands,
-    meshes: ResMut<Assets<Mesh>>,
-    materials: ResMut<Assets<StandardMaterial>>,
-    spellbook: Res<SpellBook>,
-    demo: Res<crate::paywall::DemoSettings>,
-    sheet: Res<CharacterSheet>,
     letter_query: Query<(Entity, &GlobalTransform, &HolographicLetter)>,
     submit_query: Query<&GlobalTransform, With<SubmitSpellingButton>>,
 ) {
@@ -263,18 +225,7 @@ pub fn handle_vr_spelling(
         for submit_tf in &submit_query {
             if event.position.distance(submit_tf.translation()) < 0.3 {
                 info!("Submit spelling pinched!");
-                submit_spelling_word(
-                    &mut *spelling,
-                    &mut *stash,
-                    &mut *next_state,
-                    &*db,
-                    &mut commands,
-                    meshes,
-                    materials,
-                    &*spellbook,
-                    &*demo,
-                    &*sheet,
-                );
+                writer.write(crate::commands::GameCommand::SubmitSpelling);
                 return;
             }
         }
@@ -282,12 +233,9 @@ pub fn handle_vr_spelling(
         // Check letter blocks
         for (entity, tf, letter) in &letter_query {
             if event.position.distance(tf.translation()) < 0.2 {
-                spelling.word.push(letter.0);
-                if let Some(pos) = stash.letters.iter().position(|&x| x == letter.0) {
-                    stash.letters.remove(pos);
-                }
-                info!("Current spelling: {}", spelling.word);
+                writer.write(crate::commands::GameCommand::AddLetter(letter.0));
                 commands.entity(entity).despawn();
+                info!("Pinched letter: {}", letter.0);
                 return; // One pinch per frame
             }
         }

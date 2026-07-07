@@ -70,7 +70,6 @@ fn main() {
         .init_resource::<Hand>()
         .init_resource::<DiscardPile>()
         .init_resource::<input::DragState>()
-        .init_resource::<input::PendingSwipe>()
         .init_resource::<LetterStash>()
         .init_resource::<CurrentSpelling>()
         .init_resource::<CharacterSheet>()
@@ -123,28 +122,28 @@ fn main() {
             input::drag_end,
             input::keyboard_input,
             input::handle_touch_input,
-            input::handle_ui_button_interactions.run_if(resource_exists::<GameDatabase>),
+            input::handle_ui_button_interactions,
             hand_tracking::grammar_fusion_system,
-        ));
+        ).before(commands::handle_game_commands));
 
     #[cfg(feature = "xr")]
     {
         app.add_systems(OnEnter(GameState::Constructing), spawn_holographic_stash)
-           .add_systems(Update, handle_vr_spelling.run_if(in_state(GameState::Constructing)))
+           .add_systems(Update, handle_vr_spelling.run_if(in_state(GameState::Constructing)).before(commands::handle_game_commands))
            .add_systems(OnExit(GameState::Constructing), cleanup_holographic_stash)
            .add_systems(OnEnter(GameState::Questing), spawn_vr_hand)
-           .add_systems(Update, vr_quest_interaction.run_if(in_state(GameState::Questing)))
+           .add_systems(Update, vr_quest_interaction.run_if(in_state(GameState::Questing)).before(commands::handle_game_commands))
            .add_systems(OnExit(GameState::Questing), cleanup_vr_hand)
            .add_systems(OnEnter(GameState::Battling), spawn_vr_hand)
-           .add_systems(Update, vr_battle_interaction.run_if(in_state(GameState::Battling)))
+           .add_systems(Update, vr_battle_interaction.run_if(in_state(GameState::Battling)).before(commands::handle_game_commands))
            .add_systems(OnExit(GameState::Battling), cleanup_vr_hand);
     }
 
     #[cfg(not(feature = "xr"))]
     {
-        app.add_systems(Update, handle_keyboard_spelling.run_if(in_state(GameState::Constructing)))
-           .add_systems(Update, keyboard_quest_interaction.run_if(in_state(GameState::Questing)))
-           .add_systems(Update, keyboard_battle_interaction.run_if(in_state(GameState::Battling)));
+        app.add_systems(Update, handle_keyboard_spelling.run_if(in_state(GameState::Constructing)).before(commands::handle_game_commands))
+           .add_systems(Update, keyboard_quest_interaction.run_if(in_state(GameState::Questing)).before(commands::handle_game_commands))
+           .add_systems(Update, keyboard_battle_interaction.run_if(in_state(GameState::Battling)).before(commands::handle_game_commands));
     }
 
     app.run();
@@ -427,29 +426,20 @@ fn cleanup_vr_hand(
 fn vr_quest_interaction(
     pinch_events: Res<hand_tracking::PinchEvents>,
     hand: Res<Hand>,
-    session: Option<ResMut<quest::QuestSession>>,
-    mut sheet: ResMut<CharacterSheet>,
-    mut spellbook: ResMut<SpellBook>,
-    mut next_state: ResMut<NextState<GameState>>,
-    mut commands: Commands,
-    mut curriculum: ResMut<quest::CurriculumManager>,
+    session: Option<Res<quest::QuestSession>>,
+    mut writer: MessageWriter<commands::GameCommand>,
     card_query: Query<(&GlobalTransform, &VrHandCard)>,
     submit_query: Query<&GlobalTransform, With<VrSubmitButton>>,
 ) {
-    let mut session = match session {
-        Some(s) => s,
-        None => return,
-    };
+    if session.is_none() {
+        return;
+    }
 
     for event in &pinch_events.events {
         // Check submit button
         for transform in &submit_query {
             if event.position.distance(transform.translation()) < 0.4 {
-                if session.filled_slots.len() >= session.slots.len() {
-                    quest::complete_quest(&session, &mut sheet, &mut spellbook, &mut curriculum, &mut next_state, &mut commands);
-                } else {
-                    warn!("Cannot complete quest yet, fill all slots!");
-                }
+                writer.write(commands::GameCommand::CompleteQuest);
                 return;
             }
         }
@@ -458,14 +448,7 @@ fn vr_quest_interaction(
         for (transform, card) in &card_query {
             if event.position.distance(transform.translation()) < 0.3 {
                 if card.0 < hand.cards.len() {
-                    let word = &hand.cards[card.0];
-                    let slots_count = session.slots.len();
-                    for i in 0..slots_count {
-                        if !session.filled_slots.contains_key(&i) {
-                            quest::fill_slot(i, word, None, &mut session);
-                            break;
-                        }
-                    }
+                    writer.write(commands::GameCommand::FillQuestSlot(card.0));
                 }
                 return;
             }
@@ -476,46 +459,20 @@ fn vr_quest_interaction(
 #[allow(dead_code)]
 fn vr_battle_interaction(
     pinch_events: Res<hand_tracking::PinchEvents>,
-    mut hand: ResMut<Hand>,
-    session: Option<ResMut<battle::BattleSession>>,
-    db: Res<GameDatabase>,
-    mut spellbook: ResMut<SpellBook>,
-    mut next_state: ResMut<NextState<GameState>>,
-    mut commands: Commands,
+    hand: Res<Hand>,
+    session: Option<Res<battle::BattleSession>>,
+    mut writer: MessageWriter<commands::GameCommand>,
     card_query: Query<(&GlobalTransform, &VrHandCard)>,
-    sheet: Res<CharacterSheet>,
-    mut chat_log: ResMut<chat::ChatLog>,
-    time: Res<Time>,
-    asset_server: Res<AssetServer>,
 ) {
-    let mut session = match session {
-        Some(s) => s,
-        None => return,
-    };
+    if session.is_none() {
+        return;
+    }
 
     for event in &pinch_events.events {
         for (transform, card) in &card_query {
             if event.position.distance(transform.translation()) < 0.3 {
                 if card.0 < hand.cards.len() {
-                    let played_word = hand.cards.remove(card.0);
-                    let typo_word = session.typo_word.clone();
-                    let result = battle::play_battle_card(&played_word, &mut session, &db, &mut spellbook, &mut next_state, &sheet);
-                    
-                    if result.is_effective {
-                        commands.spawn(battle::CriticalHitTrigger);
-                    }
-                    
-                    if result.social_combat_triggered {
-                        chat::trigger_social_combat(
-                            &played_word, 
-                            &typo_word, 
-                            result.is_synonym_logic, 
-                            time.elapsed_secs(), 
-                            &mut chat_log, 
-                            &mut commands, 
-                            &asset_server
-                        );
-                    }
+                    writer.write(commands::GameCommand::PlayBattleCard(card.0));
                 }
                 return;
             }
@@ -597,10 +554,10 @@ fn spawn_review_ui_xr(
 
 fn review_input_system(
     keys: Res<ButtonInput<KeyCode>>,
-    mut next_state: ResMut<NextState<GameState>>,
+    mut writer: MessageWriter<commands::GameCommand>,
 ) {
     if keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::Space) {
-        next_state.set(GameState::Playing);
+        writer.write(commands::GameCommand::DismissReview);
     }
 }
 
@@ -671,24 +628,15 @@ fn cleanup_review_ui_2d(
 fn keyboard_quest_interaction(
     keys: Res<ButtonInput<KeyCode>>,
     hand: Res<Hand>,
-    session: Option<ResMut<quest::QuestSession>>,
-    mut sheet: ResMut<CharacterSheet>,
-    mut spellbook: ResMut<SpellBook>,
-    mut next_state: ResMut<NextState<GameState>>,
-    mut curriculum: ResMut<quest::CurriculumManager>,
-    mut commands: Commands,
+    session: Option<Res<quest::QuestSession>>,
+    mut writer: MessageWriter<commands::GameCommand>,
 ) {
-    let mut session = match session {
-        Some(s) => s,
-        None => return,
-    };
+    if session.is_none() {
+        return;
+    }
 
     if keys.just_pressed(KeyCode::Enter) {
-        if session.filled_slots.len() >= session.slots.len() {
-            quest::complete_quest(&session, &mut sheet, &mut spellbook, &mut curriculum, &mut next_state, &mut commands);
-        } else {
-            info!("Cannot complete quest yet, fill all slots!");
-        }
+        writer.write(commands::GameCommand::CompleteQuest);
         return;
     }
 
@@ -700,14 +648,7 @@ fn keyboard_quest_interaction(
 
     if let Some(idx) = pressed_idx {
         if idx < hand.cards.len() {
-            let word = &hand.cards[idx];
-            let slots_count = session.slots.len();
-            for i in 0..slots_count {
-                if !session.filled_slots.contains_key(&i) {
-                    quest::fill_slot(i, word, None, &mut session);
-                    break;
-                }
-            }
+            writer.write(commands::GameCommand::FillQuestSlot(idx));
         }
     }
 }
@@ -715,21 +656,13 @@ fn keyboard_quest_interaction(
 #[cfg(not(feature = "xr"))]
 fn keyboard_battle_interaction(
     keys: Res<ButtonInput<KeyCode>>,
-    mut hand: ResMut<Hand>,
-    session: Option<ResMut<battle::BattleSession>>,
-    db: Res<GameDatabase>,
-    mut spellbook: ResMut<SpellBook>,
-    mut next_state: ResMut<NextState<GameState>>,
-    mut commands: Commands,
-    sheet: Res<CharacterSheet>,
-    mut chat_log: ResMut<chat::ChatLog>,
-    time: Res<Time>,
-    asset_server: Res<AssetServer>,
+    hand: Res<Hand>,
+    session: Option<Res<battle::BattleSession>>,
+    mut writer: MessageWriter<commands::GameCommand>,
 ) {
-    let mut session = match session {
-        Some(s) => s,
-        None => return,
-    };
+    if session.is_none() {
+        return;
+    }
 
     let pressed_idx = [
         KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3,
@@ -739,25 +672,7 @@ fn keyboard_battle_interaction(
 
     if let Some(idx) = pressed_idx {
         if idx < hand.cards.len() {
-            let played_word = hand.cards.remove(idx);
-            let typo_word = session.typo_word.clone();
-            let result = battle::play_battle_card(&played_word, &mut session, &db, &mut spellbook, &mut next_state, &sheet);
-            
-            if result.is_effective {
-                commands.spawn(battle::CriticalHitTrigger);
-            }
-            
-            if result.social_combat_triggered {
-                chat::trigger_social_combat(
-                    &played_word, 
-                    &typo_word, 
-                    result.is_synonym_logic, 
-                    time.elapsed_secs(), 
-                    &mut chat_log, 
-                    &mut commands, 
-                    &asset_server
-                );
-            }
+            writer.write(commands::GameCommand::PlayBattleCard(idx));
         }
     }
 }

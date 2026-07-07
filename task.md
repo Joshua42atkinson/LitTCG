@@ -41,11 +41,18 @@
   - Made `letter::submit_spelling_word` pub and use plain references for broader reuse
   - 24 tests passing, 0 warnings
 
-### P1.3: Reroute input to commands
-- [ ] **Windsurf task** — Refactor `handle_ui_button_interactions`
-  - Split the 16-argument god function into smaller systems
-  - Each input path sends GameCommand events instead of direct mutation
-  - Keep all existing logic, just change the entry point
+### P1.3: Reroute input to commands ✅
+- [x] **Windsurf task** — Refactor input systems to send GameCommand messages
+  - `handle_ui_button_interactions` now sends SelectCard, PlayCard, StartQuest, StartBattle, FleeBattle, CancelQuest
+  - `handle_keyboard_spelling` / `handle_vr_spelling` send AddLetter, Backspace, SubmitSpelling
+  - `drag_end` / `keyboard_input` send Swipe
+  - `keyboard_quest_interaction` / `vr_quest_interaction` send CompleteQuest, FillQuestSlot
+  - `keyboard_battle_interaction` / `vr_battle_interaction` send PlayBattleCard
+  - `review_input_system` sends DismissReview
+  - `menu_interaction` sends NewGame, ContinueGame, OpenSettings
+  - Removed unused `PendingSwipe` resource
+  - All input systems ordered `.before(commands::handle_game_commands)`
+  - 24 tests passing, 0 warnings
 
 ---
 

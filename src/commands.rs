@@ -331,15 +331,24 @@ pub fn handle_game_commands(
             }
 
             GameCommand::AddLetter(c) => {
-                current_spelling.word.push(*c);
+                let upper_c = c.to_ascii_uppercase();
+                if let Some(pos) = letter_stash.letters.iter().position(|&x| x == upper_c) {
+                    letter_stash.letters.remove(pos);
+                    current_spelling.word.push(upper_c);
+                    info!("Current spelling: {}", current_spelling.word);
+                }
             }
 
             GameCommand::Backspace => {
-                current_spelling.word.pop();
+                if let Some(c) = current_spelling.word.pop() {
+                    letter_stash.letters.push(c);
+                }
             }
 
             GameCommand::ClearSpelling => {
-                current_spelling.word.clear();
+                for c in current_spelling.word.drain(..) {
+                    letter_stash.letters.push(c);
+                }
             }
 
             GameCommand::Swipe(choice) => {

@@ -322,7 +322,14 @@ fn submit_spelling_word(
     }
 
     let word_lower = spelling.word.to_lowercase();
-    
+
+    // Profanity blocklist — banned words fail silently (no glitch entity, no reward)
+    if !crate::blocklist::is_clean(&word_lower) {
+        info!("Blocked inappropriate word attempt");
+        spelling.word.clear();
+        return;
+    }
+
     // Validate against WordDatabase
     if let Some(word_stats) = db.words.get(&word_lower) {
         info!("Spelled valid word: {} (GradeLevel: {})", spelling.word, word_stats.grade_level);

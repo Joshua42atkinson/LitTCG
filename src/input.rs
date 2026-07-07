@@ -15,7 +15,7 @@ pub struct PendingSwipe {
     pub direction: Option<SwipeChoice>,
 }
 
-const SWIPE_THRESHOLD: f32 = 80.0;
+const SWIPE_THRESHOLD: f32 = 150.0;
 
 pub fn drag_start(
     mouse: Res<ButtonInput<MouseButton>>,
@@ -97,8 +97,8 @@ pub fn keyboard_input(
 
 pub fn handle_ui_button_interactions(
     mut commands: Commands,
-    db: Res<crate::database::GameDatabase>,
-    curriculum: Res<crate::quest::CurriculumManager>,
+    db_opt: Option<Res<crate::database::GameDatabase>>,
+    mut curriculum: ResMut<crate::quest::CurriculumManager>,
     mut next_state: ResMut<NextState<GameState>>,
     state: Res<State<GameState>>,
     mut hand: ResMut<Hand>,
@@ -106,15 +106,27 @@ pub fn handle_ui_button_interactions(
     mut sheet: ResMut<CharacterSheet>,
     mut session_battle: Option<ResMut<crate::battle::BattleSession>>,
     mut session_quest: Option<ResMut<crate::quest::QuestSession>>,
-    camera_query: Query<Entity, With<Camera>>,
+    mut chat_log: ResMut<crate::chat::ChatLog>,
+    time: Res<Time>,
+    asset_server: Res<AssetServer>,
     
-    // Interactions
-    card_buttons: Query<(&Interaction, &crate::hud::HandCardUi), (Changed<Interaction>, With<Button>)>,
-    play_button: Query<&Interaction, (Changed<Interaction>, With<crate::hud::PlayCardButton>)>,
-    skip_button: Query<&Interaction, (Changed<Interaction>, With<crate::hud::SkipButton>)>,
+    // Interactions grouped to avoid 16 argument limit
+    mut interactions: (
+        Query<(&Interaction, &crate::hud::HandCardUi), (Changed<Interaction>, With<Button>)>,
+        Query<&Interaction, (Changed<Interaction>, With<crate::hud::PlayCardButton>)>,
+        Query<&Interaction, (Changed<Interaction>, With<crate::hud::SkipButton>)>,
+        Query<&Interaction, (Changed<Interaction>, With<crate::hud::QuestActionButton>)>,
+        Query<&Interaction, (Changed<Interaction>, With<crate::hud::BattleActionButton>)>,
+    ),
 ) {
+    let (card_buttons, play_button, skip_button, quest_button, battle_button) = &mut interactions;
+    let db = match db_opt {
+        Some(d) => d,
+        None => return,
+    };
+    
     // 1. Hand card selection
-    for (interaction, card_ui) in &card_buttons {
+    for (interaction, card_ui) in card_buttons {
         if *interaction == Interaction::Pressed {
             hand.selected = Some(card_ui.0);
             info!("Selected card index: {}", card_ui.0);
@@ -122,13 +134,13 @@ pub fn handle_ui_button_interactions(
     }
 
     // 2. Play Card Button clicked
-    for interaction in &play_button {
+    for interaction in play_button {
         if *interaction == Interaction::Pressed {
             info!("Play Card clicked!");
             match *state.get() {
                 GameState::Playing => {
                     if hand.selected.is_some() {
-                        crate::battle::start_battle(&mut commands, &db, &mut next_state);
+                        crate::battle::start_battle(&mut commands, &db, &curriculum, &mut next_state);
                     } else {
                         warn!("Select a card first!");
                     }
@@ -138,11 +150,21 @@ pub fn handle_ui_button_interactions(
                         if let Some(idx) = hand.selected {
                             if idx < hand.cards.len() {
                                 let played_word = hand.cards.remove(idx);
-                                let is_correct = crate::battle::play_battle_card(&played_word, session, &db, &mut spellbook, &mut next_state);
-                                if is_correct {
-                                    for entity in &camera_query {
-                                        commands.entity(entity).insert(crate::render::ScreenShake { timer: 0.3, intensity: 0.2 });
-                                    }
+                                let typo_word = session.typo_word.clone();
+                                let result = crate::battle::play_battle_card(&played_word, session, &db, &mut spellbook, &mut next_state, &sheet);
+                                if result.is_effective {
+                                    commands.spawn(crate::battle::CriticalHitTrigger);
+                                }
+                                if result.social_combat_triggered {
+                                    crate::chat::trigger_social_combat(
+                                        &played_word,
+                                        &typo_word,
+                                        result.is_synonym_logic,
+                                        time.elapsed_secs(),
+                                        &mut chat_log,
+                                        &mut commands,
+                                        &asset_server
+                                    );
                                 }
                                 hand.selected = None;
                             }
@@ -154,7 +176,7 @@ pub fn handle_ui_button_interactions(
                 GameState::Questing => {
                     if let Some(ref mut session) = session_quest {
                         if session.filled_slots.len() >= session.slots.len() {
-                            crate::quest::complete_quest(session, &mut sheet, &mut spellbook, &mut next_state, &mut commands);
+                            crate::quest::complete_quest(session, &mut sheet, &mut spellbook, &mut curriculum, &mut next_state, &mut commands);
                         } else if let Some(idx) = hand.selected {
                             if idx < hand.cards.len() {
                                 let word = &hand.cards[idx];
@@ -177,8 +199,26 @@ pub fn handle_ui_button_interactions(
         }
     }
 
-    // 3. Skip Button clicked
-    for interaction in &skip_button {
+    // 3. Quest Action Button (Flat screen)
+    for interaction in quest_button {
+        if *interaction == Interaction::Pressed {
+            if *state.get() == GameState::Playing {
+                crate::quest::start_quest("Barnaby", &db, &curriculum, &mut commands, &mut next_state);
+            }
+        }
+    }
+
+    // 4. Battle Action Button (Flat screen)
+    for interaction in battle_button {
+        if *interaction == Interaction::Pressed {
+            if *state.get() == GameState::Playing {
+                crate::battle::start_battle(&mut commands, &db, &curriculum, &mut next_state);
+            }
+        }
+    }
+
+    // 5. Skip Button
+    for interaction in skip_button {
         if *interaction == Interaction::Pressed {
             info!("Skip clicked!");
             match *state.get() {
@@ -194,6 +234,35 @@ pub fn handle_ui_button_interactions(
                     next_state.set(GameState::Playing);
                 }
                 _ => {}
+            }
+        }
+    }
+}
+
+pub fn handle_touch_input(
+    mut touch_evr: MessageReader<bevy::input::touch::TouchInput>,
+    mut gestures: ResMut<ActiveGestures>,
+    mut cards: Query<(&mut Transform, &mut DraggableCard)>,
+) {
+    for ev in touch_evr.read() {
+        match ev.phase {
+            bevy::input::touch::TouchPhase::Started => {
+                gestures.traces.insert(ev.id, vec![ev.position]);
+            }
+            bevy::input::touch::TouchPhase::Moved => {
+                if let Some(trace) = gestures.traces.get_mut(&ev.id) {
+                    trace.push(ev.position);
+                }
+                
+                for (mut transform, card) in cards.iter_mut() {
+                    if card.touch_id == Some(ev.id) {
+                        transform.translation.x = ev.position.x;
+                        transform.translation.y = ev.position.y;
+                    }
+                }
+            }
+            bevy::input::touch::TouchPhase::Ended | bevy::input::touch::TouchPhase::Canceled => {
+                gestures.traces.remove(&ev.id);
             }
         }
     }

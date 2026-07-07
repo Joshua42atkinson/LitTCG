@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 use std::collections::HashMap;
 use bevy::prelude::*;
-use bevy::asset::{AssetLoader, LoadContext, io::Reader, AsyncReadExt, AssetApp};
+use bevy::asset::{AssetLoader, LoadContext, io::Reader, AssetApp};
 use bevy::reflect::TypePath;
 use serde::Deserialize;
 

@@ -16,8 +16,12 @@ pub mod menu;
 pub mod tutorial;
 pub mod paywall;
 pub mod time_cycle;
+pub mod blocklist;
 
 
+
+#[cfg(target_os = "android")]
+use bevy::prelude::*;
 
 #[cfg(target_os = "android")]
 #[bevy_main]

@@ -41,6 +41,7 @@ pub fn update_hand_tracking(
     mut query: Query<(&mut Transform, &HandJointMarker)>,
     mut pinch_events: ResMut<PinchEvents>,
     mut time_scale: ResMut<crate::components::TimeScale>,
+    sheet: Res<crate::components::CharacterSheet>,
 ) {
     pinch_events.events.clear();
     // Simulated desktop fallback wiggling joints on sine waves
@@ -57,7 +58,8 @@ pub fn update_hand_tracking(
 
     // Calculate left hand pinch
     let previously_pinching = state.left_pinching;
-    state.left_pinching = left_index_pos.distance(left_thumb_pos) < 0.05;
+    let pinch_threshold = 0.05 * (sheet.arm_length / 0.65);
+    state.left_pinching = left_index_pos.distance(left_thumb_pos) < pinch_threshold;
 
     // Gesture Intensity Calculation (Delta between wrist positions)
     if let Some(last_wrist) = state.last_wrist_pos {
@@ -122,14 +124,14 @@ fn recognize_asl_letter(state: &mut ResMut<HandTrackingState>) {
 
 pub fn grammar_fusion_system(
     mut commands: Commands,
-    query: Query<(Entity, &Transform, &crate::components::Summon)>,
+    query: Query<(Entity, &Transform, &crate::components::PetAvatar)>,
 ) {
     let mut golems = Vec::new();
     let mut slimes = Vec::new();
     let mut robots = Vec::new();
 
-    for (entity, transform, summon) in query.iter() {
-        match summon.0 {
+    for (entity, transform, avatar) in query.iter() {
+        match avatar.pet_type {
             crate::components::SummonClass::GrammarGolem => golems.push((entity, transform.translation)),
             crate::components::SummonClass::SemanticSlime => slimes.push((entity, transform.translation)),
             crate::components::SummonClass::RhetoricRobot => robots.push((entity, transform.translation)),

@@ -119,7 +119,11 @@ fn handle_pet_taming_inputs(
             faces.0.action = Action::Playful;
             let dialogue = get_pet_dialogue(&avatar.word, faces.0.focus, faces.0.action, *element);
             chat_log.add_message(&avatar.word, &dialogue, t);
-            commands.spawn(AudioPlayer::<AudioSource>(asset_server.load("sounds/pet.ogg")));
+            commands.spawn((
+                AudioPlayer::<AudioSource>(asset_server.load("sounds/pet.ogg")),
+                PlaybackSettings::DESPAWN.with_spatial(true),
+                Transform::from_xyz(0.0, 1.0, -2.0),
+            ));
             speak_dialogue(dialogue, "af_bella".to_string(), &mut commands, &asset_server);
             info!("Petted {}", avatar.word);
         } else if keys.just_pressed(KeyCode::KeyF) {
@@ -128,7 +132,11 @@ fn handle_pet_taming_inputs(
             faces.0.action = Action::Assertive;
             let dialogue = get_pet_dialogue(&avatar.word, faces.0.focus, faces.0.action, *element);
             chat_log.add_message(&avatar.word, &dialogue, t);
-            commands.spawn(AudioPlayer::<AudioSource>(asset_server.load("sounds/feed.ogg")));
+            commands.spawn((
+                AudioPlayer::<AudioSource>(asset_server.load("sounds/feed.ogg")),
+                PlaybackSettings::DESPAWN.with_spatial(true),
+                Transform::from_xyz(0.0, 1.0, -2.0),
+            ));
             speak_dialogue(dialogue, "af_bella".to_string(), &mut commands, &asset_server);
             info!("Fed {}", avatar.word);
         } else if keys.just_pressed(KeyCode::KeyT) {
@@ -138,7 +146,11 @@ fn handle_pet_taming_inputs(
             faces.0.aura = Aura::from_index(next_idx);
             let dialogue = format!("*Aura color shifted to index {}!*", next_idx);
             chat_log.add_message("System", &dialogue, t);
-            commands.spawn(AudioPlayer::<AudioSource>(asset_server.load("sounds/attune.ogg")));
+            commands.spawn((
+                AudioPlayer::<AudioSource>(asset_server.load("sounds/attune.ogg")),
+                PlaybackSettings::DESPAWN.with_spatial(true),
+                Transform::from_xyz(0.0, 1.0, -2.0),
+            ));
             info!("Attuned {}", avatar.word);
         }
     }
@@ -178,10 +190,10 @@ pub fn get_pet_dialogue(
 
 pub fn speak_dialogue(text: String, voice: String, commands: &mut Commands, asset_server: &Res<AssetServer>) {
     #[cfg(all(feature = "tts", not(target_arch = "wasm32")))]
-    std::thread::spawn(move || {
+    bevy::tasks::IoTaskPool::get().spawn(async move {
         // Send POST to Kokoro TTS sidecar
         // Path: http://localhost:8200/v1/audio/speech (OpenAI TTS compatible API)
-        let client = reqwest::blocking::Client::new();
+        let client = reqwest::Client::new();
         let payload = serde_json::json!({
             "model": "kokoro",
             "input": text,
@@ -191,29 +203,38 @@ pub fn speak_dialogue(text: String, voice: String, commands: &mut Commands, asse
         
         match client.post("http://localhost:8200/v1/audio/speech")
             .json(&payload)
-            .send() {
+            .send()
+            .await 
+        {
             Ok(resp) => {
                 if resp.status().is_success() {
-                    if let Ok(bytes) = resp.bytes() {
+                    if let Ok(bytes) = resp.bytes().await {
+                        use std::io::Write;
                         // Write to a temporary file, e.g. assets/sounds/tts_output.mp3
                         // So that Bevy's AssetServer can load it and play it!
                         if let Ok(mut file) = std::fs::File::create("assets/sounds/tts_output.mp3") {
                             let _ = file.write_all(&bytes);
                         }
                     }
+                } else {
+                    tracing::warn!("Kokoro TTS sidecar returned error status: {}", resp.status());
                 }
             }
             Err(e) => {
-                tracing::warn!("Failed to contact Kokoro TTS sidecar: {}", e);
+                tracing::warn!("Failed to contact Kokoro TTS sidecar (is it offline?): {}", e);
             }
         }
-    });
+    }).detach();
 
     #[cfg(any(not(feature = "tts"), target_arch = "wasm32"))]
     {
         let _ = text;
         let _ = voice;
-        commands.spawn(AudioPlayer::<AudioSource>(asset_server.load("sounds/blip.ogg")));
+        commands.spawn((
+            AudioPlayer::<AudioSource>(asset_server.load("sounds/blip.ogg")),
+            PlaybackSettings::DESPAWN.with_spatial(true),
+            Transform::from_xyz(0.0, 1.0, -2.0),
+        ));
     }
 }
 

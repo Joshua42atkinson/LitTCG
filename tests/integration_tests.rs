@@ -5,6 +5,7 @@ use communication_class::database::GameDatabase;
 use communication_class::quest::{self, QuestSession};
 use communication_class::battle::{self, BattleSession};
 use communication_class::save::{self, SaveData};
+use communication_class::blocklist;
 use bevy::prelude::*;
 use std::collections::HashMap;
 
@@ -245,5 +246,33 @@ fn test_curriculum_and_dialogue() {
     let graded_up = curriculum.check_grade_up(1200);
     assert!(graded_up);
     assert_eq!(curriculum.get_grade_level(), "Grade 2");
+}
+
+#[test]
+fn test_blocklist_filters_inappropriate_words() {
+    // Clean words pass
+    assert!(blocklist::is_clean("happy"), "happy should be clean");
+    assert!(blocklist::is_clean("serenity"), "serenity should be clean");
+    assert!(blocklist::is_clean("dragon"), "dragon should be clean");
+    assert!(blocklist::is_clean("knowledge"), "knowledge should be clean");
+
+    // Profanity blocked
+    assert!(!blocklist::is_clean("damn"), "damn should be blocked");
+    assert!(!blocklist::is_clean("shit"), "shit should be blocked");
+    assert!(!blocklist::is_clean("fuck"), "fuck should be blocked");
+
+    // Case insensitive
+    assert!(!blocklist::is_clean("SHIT"), "SHIT should be blocked");
+    assert!(!blocklist::is_clean("Fuck"), "Fuck should be blocked");
+
+    // Compound words with banned substrings
+    assert!(!blocklist::is_clean("fuckface"), "fuckface should be blocked");
+    assert!(!blocklist::is_clean("shithead"), "shithead should be blocked");
+
+    // False positive check — legitimate words that contain "ass" etc.
+    assert!(blocklist::is_clean("assassin"), "assassin should be clean");
+    assert!(blocklist::is_clean("classroom"), "classroom should be clean");
+    assert!(blocklist::is_clean("glass"), "glass should be clean");
+    assert!(blocklist::is_clean("grass"), "grass should be clean");
 }
 

@@ -16,10 +16,13 @@ mod menu;
 mod tutorial;
 mod paywall;
 mod time_cycle;
+mod spatial_deck;
+mod altar;
+mod dialogue_ui;
+mod blocklist;
 
 use std::collections::HashMap;
 use bevy::prelude::*;
-use bevy::ecs::message::MessageReader;
 use bevy::asset::AssetEvent;
 use components::*;
 use database::*;
@@ -38,6 +41,9 @@ fn main() {
                     ..default()
                 }),
                 ..default()
+            }).set(bevy::asset::AssetPlugin {
+                meta_check: bevy::asset::AssetMetaCheck::Never,
+                ..default()
             }),
             render::RenderPlugin,
             chat::ChatPlugin,
@@ -50,9 +56,13 @@ fn main() {
             time_cycle::TimeCyclePlugin,
             spatial_ui::SpatialUiPlugin,
             database::DatabasePlugin,
+            spatial_deck::SpatialDeckPlugin,
+            altar::AltarPlugin,
+            dialogue_ui::DialogueUiPlugin,
         ))
         .insert_resource(ClearColor(Color::srgb(0.2, 0.2, 0.3)))
         .init_state::<GameState>()
+        .init_resource::<GameDatabase>()
         .init_resource::<Deck>()
         .init_resource::<Hand>()
         .init_resource::<DiscardPile>()
@@ -69,6 +79,8 @@ fn main() {
         .init_resource::<quest::CurriculumManager>()
         .init_resource::<hand_tracking::PinchEvents>()
         .init_resource::<crate::components::TimeScale>()
+        .init_resource::<GameGrid>()
+        .init_resource::<ActiveGestures>()
         .add_systems(Startup, setup_world)
         .add_systems(OnEnter(GameState::Loading), start_loading_database)
         .add_systems(Update, check_database_loading.run_if(in_state(GameState::Loading)))
@@ -78,6 +90,7 @@ fn main() {
             spawn_letter_crystals,
             animate_crystals,
             collect_letters,
+            handle_pinch_crystals,
         ).run_if(in_state(GameState::Collecting)))
         .add_systems(OnEnter(GameState::Playing), save::auto_save_system)
         .add_systems(Update, (
@@ -105,7 +118,8 @@ fn main() {
             input::drag_move,
             input::drag_end,
             input::keyboard_input,
-            input::handle_ui_button_interactions,
+            input::handle_touch_input,
+            input::handle_ui_button_interactions.run_if(resource_exists::<GameDatabase>),
             hand_tracking::grammar_fusion_system,
         ));
 
@@ -137,12 +151,21 @@ fn setup_world(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // Spawn camera with HDR, Bloom, and Screen-Space Ambient Occlusion (SSAO)
+    // Spawn camera with HDR, Bloom, and Screen-Space Ambient Occlusion (SSAO) for Desktop
+    #[cfg(all(not(feature = "xr"), not(target_arch = "wasm32")))]
     commands.spawn((
         Camera3d::default(),
         bevy::render::view::Hdr,
         bevy::post_process::bloom::Bloom::NATURAL,
         bevy::pbr::ScreenSpaceAmbientOcclusion::default(),
+        bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface,
+        Transform::from_xyz(0.0, 2.0, 5.0).looking_at(Vec3::new(0.0, 1.5, 0.0), Vec3::Y),
+    ));
+
+    // Spawn lightweight camera for XR or WASM
+    #[cfg(any(feature = "xr", target_arch = "wasm32"))]
+    commands.spawn((
+        Camera3d::default(),
         bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface,
         Transform::from_xyz(0.0, 2.0, 5.0).looking_at(Vec3::new(0.0, 1.5, 0.0), Vec3::Y),
     ));
@@ -230,7 +253,7 @@ fn hot_reload_database(
     mut events: MessageReader<AssetEvent<RawJsonAsset>>,
     loading: Option<Res<LoadingDatabases>>,
     assets: Res<Assets<RawJsonAsset>>,
-    mut db: Option<ResMut<GameDatabase>>,
+    db: Option<ResMut<GameDatabase>>,
 ) {
     let loading = match loading {
         Some(l) => l,
@@ -281,6 +304,7 @@ fn hot_reload_database(
 
 fn initialize_player_deck(
     db: Res<GameDatabase>,
+    curriculum: Res<crate::quest::CurriculumManager>,
     mut deck: ResMut<Deck>,
     mut spellbook: ResMut<SpellBook>,
     mut stash: ResMut<LetterStash>,
@@ -298,7 +322,11 @@ fn initialize_player_deck(
         }
         info!("Loaded save file!");
     } else {
-        let mut pool: Vec<String> = db.synonyms.keys().cloned().collect();
+        let valid_grades = curriculum.get_valid_grade_levels();
+        let mut pool: Vec<String> = db.words.iter()
+            .filter(|(_, stats)| valid_grades.contains(&stats.grade_level.as_str()))
+            .map(|(word, _)| word.clone())
+            .collect();
         pool.sort();
 
         if !pool.is_empty() {
@@ -326,6 +354,7 @@ pub struct VrHandCard(pub usize);
 #[derive(Component)]
 pub struct VrSubmitButton;
 
+#[allow(dead_code)]
 fn spawn_vr_hand(
     mut commands: Commands,
     hand: Res<Hand>,
@@ -380,6 +409,7 @@ fn spawn_vr_hand(
     }
 }
 
+#[allow(dead_code)]
 fn cleanup_vr_hand(
     mut commands: Commands,
     query: Query<Entity, Or<(With<VrHandCard>, With<VrSubmitButton>)>>,
@@ -389,6 +419,7 @@ fn cleanup_vr_hand(
     }
 }
 
+#[allow(dead_code)]
 fn vr_quest_interaction(
     pinch_events: Res<hand_tracking::PinchEvents>,
     hand: Res<Hand>,
@@ -397,6 +428,7 @@ fn vr_quest_interaction(
     mut spellbook: ResMut<SpellBook>,
     mut next_state: ResMut<NextState<GameState>>,
     mut commands: Commands,
+    mut curriculum: ResMut<quest::CurriculumManager>,
     card_query: Query<(&GlobalTransform, &VrHandCard)>,
     submit_query: Query<&GlobalTransform, With<VrSubmitButton>>,
 ) {
@@ -410,7 +442,7 @@ fn vr_quest_interaction(
         for transform in &submit_query {
             if event.position.distance(transform.translation()) < 0.4 {
                 if session.filled_slots.len() >= session.slots.len() {
-                    quest::complete_quest(&session, &mut sheet, &mut spellbook, &mut next_state, &mut commands);
+                    quest::complete_quest(&session, &mut sheet, &mut spellbook, &mut curriculum, &mut next_state, &mut commands);
                 } else {
                     warn!("Cannot complete quest yet, fill all slots!");
                 }
@@ -437,6 +469,7 @@ fn vr_quest_interaction(
     }
 }
 
+#[allow(dead_code)]
 fn vr_battle_interaction(
     pinch_events: Res<hand_tracking::PinchEvents>,
     mut hand: ResMut<Hand>,
@@ -445,8 +478,11 @@ fn vr_battle_interaction(
     mut spellbook: ResMut<SpellBook>,
     mut next_state: ResMut<NextState<GameState>>,
     mut commands: Commands,
-    camera_query: Query<Entity, With<Camera>>,
     card_query: Query<(&GlobalTransform, &VrHandCard)>,
+    sheet: Res<CharacterSheet>,
+    mut chat_log: ResMut<chat::ChatLog>,
+    time: Res<Time>,
+    asset_server: Res<AssetServer>,
 ) {
     let mut session = match session {
         Some(s) => s,
@@ -458,12 +494,23 @@ fn vr_battle_interaction(
             if event.position.distance(transform.translation()) < 0.3 {
                 if card.0 < hand.cards.len() {
                     let played_word = hand.cards.remove(card.0);
-                    let is_correct = battle::play_battle_card(&played_word, &mut session, &db, &mut spellbook, &mut next_state);
+                    let typo_word = session.typo_word.clone();
+                    let result = battle::play_battle_card(&played_word, &mut session, &db, &mut spellbook, &mut next_state, &sheet);
                     
-                    if is_correct {
-                        for entity in camera_query.iter() {
-                            commands.entity(entity).insert(crate::render::ScreenShake { timer: 0.3, intensity: 0.2 });
-                        }
+                    if result.is_effective {
+                        commands.spawn(battle::CriticalHitTrigger);
+                    }
+                    
+                    if result.social_combat_triggered {
+                        chat::trigger_social_combat(
+                            &played_word, 
+                            &typo_word, 
+                            result.is_synonym_logic, 
+                            time.elapsed_secs(), 
+                            &mut chat_log, 
+                            &mut commands, 
+                            &asset_server
+                        );
                     }
                 }
                 return;
@@ -624,6 +671,7 @@ fn keyboard_quest_interaction(
     mut sheet: ResMut<CharacterSheet>,
     mut spellbook: ResMut<SpellBook>,
     mut next_state: ResMut<NextState<GameState>>,
+    mut curriculum: ResMut<quest::CurriculumManager>,
     mut commands: Commands,
 ) {
     let mut session = match session {
@@ -633,7 +681,7 @@ fn keyboard_quest_interaction(
 
     if keys.just_pressed(KeyCode::Enter) {
         if session.filled_slots.len() >= session.slots.len() {
-            quest::complete_quest(&session, &mut sheet, &mut spellbook, &mut next_state, &mut commands);
+            quest::complete_quest(&session, &mut sheet, &mut spellbook, &mut curriculum, &mut next_state, &mut commands);
         } else {
             info!("Cannot complete quest yet, fill all slots!");
         }
@@ -669,7 +717,10 @@ fn keyboard_battle_interaction(
     mut spellbook: ResMut<SpellBook>,
     mut next_state: ResMut<NextState<GameState>>,
     mut commands: Commands,
-    camera_query: Query<Entity, With<Camera>>,
+    sheet: Res<CharacterSheet>,
+    mut chat_log: ResMut<chat::ChatLog>,
+    time: Res<Time>,
+    asset_server: Res<AssetServer>,
 ) {
     let mut session = match session {
         Some(s) => s,
@@ -685,12 +736,23 @@ fn keyboard_battle_interaction(
     if let Some(idx) = pressed_idx {
         if idx < hand.cards.len() {
             let played_word = hand.cards.remove(idx);
-            let is_correct = battle::play_battle_card(&played_word, &mut session, &db, &mut spellbook, &mut next_state);
+            let typo_word = session.typo_word.clone();
+            let result = battle::play_battle_card(&played_word, &mut session, &db, &mut spellbook, &mut next_state, &sheet);
             
-            if is_correct {
-                for entity in camera_query.iter() {
-                    commands.entity(entity).insert(crate::render::ScreenShake { timer: 0.3, intensity: 0.2 });
-                }
+            if result.is_effective {
+                commands.spawn(battle::CriticalHitTrigger);
+            }
+            
+            if result.social_combat_triggered {
+                chat::trigger_social_combat(
+                    &played_word, 
+                    &typo_word, 
+                    result.is_synonym_logic, 
+                    time.elapsed_secs(), 
+                    &mut chat_log, 
+                    &mut commands, 
+                    &asset_server
+                );
             }
         }
     }

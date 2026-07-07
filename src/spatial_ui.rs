@@ -205,7 +205,7 @@ fn handle_spatial_button_pinches(
                     }
                     "Battle" => {
                         if *state.get() == crate::components::GameState::Playing {
-                            crate::battle::start_battle(&mut commands, &db, &mut next_state);
+                            crate::battle::start_battle(&mut commands, &db, &curriculum, &mut next_state);
                         }
                     }
                     _ => {}

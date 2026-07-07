@@ -88,7 +88,7 @@ bevy = { version = "0.18.1", default-features = false, features = [
 bevy_reflect = "0.18.1"
 log = "0.4"
 getrandom = { version = "0.2.15", features = ["js"] }
-reqwest = { version = "0.12", features = ["blocking", "json"], optional = true }
+reqwest = { version = "0.12", features = ["json"], optional = true }
 
 # FACES Protocol (local path dep)
 faces-protocol = { path = "../crates/faces-protocol", features = ["serde"] }

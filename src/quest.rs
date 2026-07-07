@@ -81,6 +81,7 @@ pub fn complete_quest(
     session: &QuestSession,
     sheet: &mut CharacterSheet,
     spellbook: &mut SpellBook,
+    curriculum: &mut CurriculumManager,
     next_state: &mut NextState<GameState>,
     commands: &mut Commands,
 ) {
@@ -92,8 +93,8 @@ pub fn complete_quest(
     // Reconstruct the final text
     let mut final_text = session.template.clone();
     let mut bonus_xp = 0;
-    #[allow(unused_variables)]
-    let mut bonus_evolution = 0;
+    #[allow(unused_assignments, unused_variables)]
+    let mut _bonus_evolution = 0;
 
     for i in 0..session.slots.len() {
         let placeholder = format!("{{{}}}", session.slots[i]);
@@ -108,7 +109,7 @@ pub fn complete_quest(
             match s_class {
                 SummonClass::SemanticSlime => {
                     info!("Semantic Slime consumed a word for evolution!");
-                    bonus_evolution += 5; // Extra evolution points for fluid semantics
+                    _bonus_evolution += 5; // Extra evolution points for fluid semantics
                 },
                 SummonClass::GrammarGolem => {
                     info!("Grammar Golem reinforces syntax!");
@@ -127,6 +128,16 @@ pub fn complete_quest(
     // Award rewards
     sheet.total_xp += (session.xp_reward + bonus_xp) as u64;
     sheet.words_encountered += 1;
+
+    // Check for grade up and unlock district
+    if curriculum.check_grade_up(sheet.total_xp) {
+        if let Some(district) = DISTRICTS.get((curriculum.active_grade as usize).saturating_sub(1)) {
+            if !curriculum.unlocked_districts.contains(&district.to_string()) {
+                curriculum.unlocked_districts.push(district.to_string());
+                info!("District Unlocked: {}", district);
+            }
+        }
+    }
 
     commands.remove_resource::<QuestSession>();
     next_state.set(GameState::Playing);
@@ -148,10 +159,26 @@ pub fn get_npc_dialogue(npc_name: &str, db: &GameDatabase, time_of_day: &str) ->
     format!("Hello, I am {}.", npc_name)
 }
 
-#[derive(Resource, Debug, Clone, Default)]
+pub const DISTRICTS: [&str; 12] = [
+    "Garden District", // C
+    "Outlaw Outpost",  // C#
+    "Shadow Library",  // D
+    "Great Railway",   // D#
+    "Maintenance Bay", // E
+    "Irony Junction",  // F
+    "Adjective Valley",// F#
+    "Central Station", // G
+    "Metaphor Mountains", // G#
+    "Logic Labyrinth", // A
+    "Semantic Sea", // A#
+    "Mastery Monolith", // B
+];
+
+#[derive(Resource)]
 pub struct CurriculumManager {
     pub active_grade: u32,
     pub progress_xp: u64,
+    pub unlocked_districts: Vec<String>,
 }
 
 impl CurriculumManager {
@@ -168,6 +195,26 @@ impl CurriculumManager {
             false
         }
     }
+
+    pub fn get_valid_grade_levels(&self) -> Vec<&'static str> {
+        let mut grades = vec!["K-2"];
+        if self.active_grade >= 2 {
+            grades.push("3-5");
+        }
+        if self.active_grade >= 3 {
+            grades.push("6-8");
+            grades.push("6-9");
+        }
+        if self.active_grade >= 4 {
+            grades.push("9-10");
+            grades.push("10-12");
+            grades.push("11-12");
+        }
+        if self.active_grade >= 5 {
+            grades.push("Graduate");
+        }
+        grades
+    }
 }
 
 #[derive(Component)]
@@ -176,10 +223,21 @@ pub struct QuestUiPanel;
 #[derive(Component)]
 pub struct QuestUiText;
 
+impl Default for CurriculumManager {
+    fn default() -> Self {
+        Self {
+            active_grade: 1,
+            progress_xp: 0,
+            unlocked_districts: vec![DISTRICTS[0].to_string()],
+        }
+    }
+}
+
 pub struct QuestPlugin;
 
 impl Plugin for QuestPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<CurriculumManager>();
         #[cfg(feature = "xr")]
         app.add_systems(OnEnter(GameState::Questing), spawn_quest_ui_xr)
            .add_systems(Update, update_quest_ui_xr.run_if(in_state(GameState::Questing)))

@@ -12,6 +12,7 @@
       "-s",
       "-ed"
     ],
+    "AvatarPath": "textures/avatars/barnaby.png",
     "EvolutionRole": "word_identification",
     "Dialogue": {
       "Dawn": [
@@ -80,6 +81,7 @@
       "-ing",
       "-er"
     ],
+    "AvatarPath": "textures/avatars/kael.png",
     "EvolutionRole": "action_pairing",
     "Dialogue": {
       "Dawn": [

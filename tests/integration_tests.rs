@@ -6,7 +6,10 @@ use communication_class::quest::{self, QuestSession};
 use communication_class::battle::{self, BattleSession};
 use communication_class::save::{self, SaveData};
 use communication_class::blocklist;
-use communication_class::commands::{GameCommand, LastCommand};
+use communication_class::commands::{GameCommand, LastCommand, handle_game_commands};
+use communication_class::chat;
+use communication_class::letter;
+use communication_class::paywall;
 use bevy::prelude::*;
 use std::collections::HashMap;
 
@@ -303,4 +306,75 @@ fn test_game_command_messages() {
 
     let last = app.world().resource::<LastCommand>();
     assert_eq!(last.0, Some(cmd), "GameCommand should be received and recorded");
+}
+
+#[test]
+fn test_command_handler_select_card() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.add_message::<GameCommand>();
+    app.init_resource::<LastCommand>();
+    app.init_resource::<Hand>();
+
+    app.add_systems(Update, handle_game_commands);
+
+    // Minimal resources required by the handler signature.
+    app.init_resource::<GameDatabase>();
+    app.init_resource::<quest::CurriculumManager>();
+    app.init_resource::<SpellBook>();
+    app.init_resource::<CharacterSheet>();
+    app.init_resource::<StudentTrail>();
+    app.init_resource::<chat::ChatLog>();
+    app.init_resource::<letter::CurrentSpelling>();
+    app.init_resource::<letter::LetterStash>();
+    app.init_resource::<paywall::DemoSettings>();
+
+    // Pre-populate the hand.
+    {
+        let mut hand = app.world_mut().resource_mut::<Hand>();
+        hand.cards = vec!["wisdom".to_string(), "courage".to_string(), "patience".to_string()];
+    }
+
+    app.world_mut().write_message(GameCommand::SelectCard(1));
+    app.update();
+
+    let hand = app.world().resource::<Hand>();
+    assert_eq!(hand.selected, Some(1), "Handler should select card index 1");
+}
+
+#[test]
+fn test_command_handler_dismiss_review() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.add_message::<GameCommand>();
+    app.init_resource::<LastCommand>();
+    // Minimal resources required by the handler signature.
+    app.init_resource::<GameDatabase>();
+    app.init_resource::<quest::CurriculumManager>();
+    app.init_resource::<Hand>();
+    app.init_resource::<SpellBook>();
+    app.init_resource::<CharacterSheet>();
+    app.init_resource::<StudentTrail>();
+    app.init_resource::<chat::ChatLog>();
+    app.init_resource::<letter::CurrentSpelling>();
+    app.init_resource::<letter::LetterStash>();
+    app.init_resource::<paywall::DemoSettings>();
+
+    app.add_systems(Update, handle_game_commands);
+
+    // Move state into Reviewing.
+    app.world_mut().resource_mut::<NextState<GameState>>().set(GameState::Reviewing);
+    app.update();
+    assert_eq!(*app.world().resource::<State<GameState>>().get(), GameState::Reviewing);
+
+    // Dismiss the review.
+    app.world_mut().write_message(GameCommand::DismissReview);
+    app.update();
+    app.update(); // Second update applies the NextState transition set by the handler.
+
+    assert_eq!(*app.world().resource::<State<GameState>>().get(), GameState::Playing);
 }

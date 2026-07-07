@@ -113,6 +113,7 @@ fn main() {
     }
 
     app.add_systems(Update, review_input_system.run_if(in_state(GameState::Reviewing)))
+       .add_systems(Update, commands::handle_game_commands)
        .add_systems(Update, (
             hand_tracking::update_hand_tracking,
             deck::draw_cards,

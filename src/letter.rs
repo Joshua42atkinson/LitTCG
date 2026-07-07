@@ -147,16 +147,16 @@ pub fn handle_keyboard_spelling(
     if keys.just_pressed(KeyCode::Enter) {
         info!("Submitting word via keyboard!");
         submit_spelling_word(
-            &mut spelling,
-            &mut stash,
-            &mut next_state,
-            &db,
+            &mut *spelling,
+            &mut *stash,
+            &mut *next_state,
+            &*db,
             &mut commands,
             meshes,
             materials,
-            &spellbook,
-            &demo,
-            &sheet,
+            &*spellbook,
+            &*demo,
+            &*sheet,
         );
     }
 }
@@ -264,16 +264,16 @@ pub fn handle_vr_spelling(
             if event.position.distance(submit_tf.translation()) < 0.3 {
                 info!("Submit spelling pinched!");
                 submit_spelling_word(
-                    &mut spelling,
-                    &mut stash,
-                    &mut next_state,
-                    &db,
+                    &mut *spelling,
+                    &mut *stash,
+                    &mut *next_state,
+                    &*db,
                     &mut commands,
                     meshes,
                     materials,
-                    &spellbook,
-                    &demo,
-                    &sheet,
+                    &*spellbook,
+                    &*demo,
+                    &*sheet,
                 );
                 return;
             }
@@ -304,17 +304,17 @@ pub fn cleanup_holographic_stash(
     }
 }
 
-fn submit_spelling_word(
-    spelling: &mut ResMut<CurrentSpelling>,
-    _stash: &mut ResMut<LetterStash>,
-    next_state: &mut ResMut<NextState<GameState>>,
-    db: &Res<GameDatabase>,
+pub fn submit_spelling_word(
+    spelling: &mut CurrentSpelling,
+    _stash: &mut LetterStash,
+    next_state: &mut NextState<GameState>,
+    db: &GameDatabase,
     commands: &mut Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    spellbook: &Res<SpellBook>,
-    demo: &Res<crate::paywall::DemoSettings>,
-    sheet: &Res<CharacterSheet>,
+    spellbook: &SpellBook,
+    demo: &crate::paywall::DemoSettings,
+    sheet: &CharacterSheet,
 ) {
     if demo.is_demo && spellbook.entries.len() >= demo.max_words {
         next_state.set(GameState::Paywall);

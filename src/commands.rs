@@ -76,6 +76,308 @@ pub enum GameCommand {
 #[derive(Resource, Default, Debug, Clone)]
 pub struct LastCommand(pub Option<GameCommand>);
 
+/// Central command handler: turns high-level player-intent messages into game state changes.
+///
+/// Input systems should remain thin after Phase 1.3 — they only send `GameCommand` messages.
+/// This system is the single place where those messages are interpreted and executed.
+///
+/// Resources are grouped into tuples to stay within Bevy's system-parameter limit.
+pub fn handle_game_commands(
+    mut commands: Commands,
+    mut messages: MessageReader<GameCommand>,
+    mut last: ResMut<LastCommand>,
+    state: Res<State<GameState>>,
+    mut next_state: ResMut<NextState<GameState>>,
+    mut sheet: ResMut<crate::components::CharacterSheet>,
+    mut trail: ResMut<crate::components::StudentTrail>,
+    mut session_battle: Option<ResMut<crate::battle::BattleSession>>,
+    mut session_quest: Option<ResMut<crate::quest::QuestSession>>,
+    card_resources: (ResMut<crate::components::Hand>, ResMut<crate::components::SpellBook>),
+    combat_resources: (
+        Res<crate::database::GameDatabase>,
+        ResMut<crate::quest::CurriculumManager>,
+        Res<Time>,
+        Option<Res<AssetServer>>,
+        ResMut<crate::chat::ChatLog>,
+    ),
+    spelling_resources: (
+        ResMut<crate::letter::CurrentSpelling>,
+        ResMut<crate::letter::LetterStash>,
+        Option<ResMut<Assets<Mesh>>>,
+        Option<ResMut<Assets<StandardMaterial>>>,
+        Res<crate::paywall::DemoSettings>,
+    ),
+) {
+    let (mut hand, mut spellbook) = card_resources;
+    let (db, mut curriculum, time, asset_server, mut chat_log) = combat_resources;
+    let (mut current_spelling, mut letter_stash, mut meshes, mut materials, demo) = spelling_resources;
+
+    for msg in messages.read() {
+        last.0 = Some(msg.clone());
+        match msg {
+            GameCommand::SelectCard(idx) => {
+                if *idx < hand.cards.len() {
+                    hand.selected = Some(*idx);
+                    info!("Selected card index: {}", idx);
+                } else {
+                    warn!("SelectCard index {} out of bounds (hand has {} cards)", idx, hand.cards.len());
+                }
+            }
+
+            GameCommand::StartBattle => {
+                if *state.get() == GameState::Playing {
+                    crate::battle::start_battle(&mut commands, &db, &curriculum, &mut next_state);
+                }
+            }
+
+            GameCommand::StartQuest(npc) => {
+                if *state.get() == GameState::Playing {
+                    crate::quest::start_quest(npc, &db, &curriculum, &mut commands, &mut next_state);
+                }
+            }
+
+            GameCommand::PlayCard => {
+                match *state.get() {
+                    GameState::Playing => {
+                        if hand.selected.is_some() {
+                            crate::battle::start_battle(&mut commands, &db, &curriculum, &mut next_state);
+                        } else {
+                            warn!("Select a card first!");
+                        }
+                    }
+                    GameState::Battling => {
+                        if let Some(ref mut session) = session_battle {
+                            if let Some(idx) = hand.selected {
+                                if idx < hand.cards.len() {
+                                    let played_word = hand.cards.remove(idx);
+                                    let typo_word = session.typo_word.clone();
+                                    let result = crate::battle::play_battle_card(
+                                        &played_word,
+                                        session,
+                                        &db,
+                                        &mut spellbook,
+                                        &mut next_state,
+                                        &sheet,
+                                    );
+                                    if result.is_effective {
+                                        commands.spawn(crate::battle::CriticalHitTrigger);
+                                    }
+                                    if result.social_combat_triggered {
+                                        if let Some(ref asset_server) = asset_server {
+                                            crate::chat::trigger_social_combat(
+                                                &played_word,
+                                                &typo_word,
+                                                result.is_synonym_logic,
+                                                time.elapsed_secs(),
+                                                &mut chat_log,
+                                                &mut commands,
+                                                asset_server,
+                                            );
+                                        }
+                                    }
+                                    hand.selected = None;
+                                }
+                            } else {
+                                warn!("Select a card first to play!");
+                            }
+                        }
+                    }
+                    GameState::Questing => {
+                        if let Some(ref mut session) = session_quest {
+                            if session.filled_slots.len() >= session.slots.len() {
+                                crate::quest::complete_quest(session, &mut sheet, &mut spellbook, &mut curriculum, &mut next_state, &mut commands);
+                            } else if let Some(idx) = hand.selected {
+                                if idx < hand.cards.len() {
+                                    let word = &hand.cards[idx];
+                                    let slots_count = session.slots.len();
+                                    for i in 0..slots_count {
+                                        if !session.filled_slots.contains_key(&i) {
+                                            crate::quest::fill_slot(i, word, Some(sheet.active_summon_class), session);
+                                            break;
+                                        }
+                                    }
+                                    hand.selected = None;
+                                }
+                            } else {
+                                warn!("Select a card first or complete quest if full!");
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            GameCommand::SkipCard => {
+                match *state.get() {
+                    GameState::Playing => {
+                        crate::quest::start_quest("Barnaby", &db, &curriculum, &mut commands, &mut next_state);
+                    }
+                    GameState::Battling => {
+                        info!("Retreating from battle!");
+                        commands.remove_resource::<crate::battle::BattleSession>();
+                        next_state.set(GameState::Playing);
+                    }
+                    GameState::Questing => {
+                        info!("Canceling quest!");
+                        commands.remove_resource::<crate::quest::QuestSession>();
+                        next_state.set(GameState::Playing);
+                    }
+                    _ => {}
+                }
+            }
+
+            GameCommand::PlayBattleCard(idx) => {
+                if *state.get() == GameState::Battling {
+                    if let Some(ref mut session) = session_battle {
+                        if *idx < hand.cards.len() {
+                            let played_word = hand.cards.remove(*idx);
+                            let typo_word = session.typo_word.clone();
+                            let result = crate::battle::play_battle_card(
+                                &played_word,
+                                session,
+                                &db,
+                                &mut spellbook,
+                                &mut next_state,
+                                &sheet,
+                            );
+                            if result.is_effective {
+                                commands.spawn(crate::battle::CriticalHitTrigger);
+                            }
+                            if result.social_combat_triggered {
+                                if let Some(ref asset_server) = asset_server {
+                                    crate::chat::trigger_social_combat(
+                                        &played_word,
+                                        &typo_word,
+                                        result.is_synonym_logic,
+                                        time.elapsed_secs(),
+                                        &mut chat_log,
+                                        &mut commands,
+                                        asset_server,
+                                    );
+                                }
+                            }
+                            hand.selected = None;
+                        } else {
+                            warn!("PlayBattleCard index {} out of bounds", idx);
+                        }
+                    }
+                }
+            }
+
+            GameCommand::FleeBattle => {
+                if *state.get() == GameState::Battling {
+                    commands.remove_resource::<crate::battle::BattleSession>();
+                    next_state.set(GameState::Playing);
+                }
+            }
+
+            GameCommand::CancelQuest => {
+                if *state.get() == GameState::Questing {
+                    commands.remove_resource::<crate::quest::QuestSession>();
+                    next_state.set(GameState::Playing);
+                }
+            }
+
+            GameCommand::CompleteQuest => {
+                if let Some(ref mut session) = session_quest {
+                    if session.filled_slots.len() >= session.slots.len() {
+                        crate::quest::complete_quest(session, &mut sheet, &mut spellbook, &mut curriculum, &mut next_state, &mut commands);
+                    } else {
+                        warn!("Cannot complete quest: not all slots are filled!");
+                    }
+                }
+            }
+
+            GameCommand::FillQuestSlot(card_idx) => {
+                if *state.get() == GameState::Questing {
+                    if let Some(ref mut session) = session_quest {
+                        if *card_idx < hand.cards.len() {
+                            let word = &hand.cards[*card_idx];
+                            let slots_count = session.slots.len();
+                            for i in 0..slots_count {
+                                if !session.filled_slots.contains_key(&i) {
+                                    crate::quest::fill_slot(i, word, Some(sheet.active_summon_class), session);
+                                    break;
+                                }
+                            }
+                        } else {
+                            warn!("FillQuestSlot card index {} out of bounds", card_idx);
+                        }
+                    }
+                }
+            }
+
+            GameCommand::SubmitSpelling => {
+                if *state.get() == GameState::Constructing {
+                    if let (Some(meshes), Some(materials)) = (meshes.take(), materials.take()) {
+                        crate::letter::submit_spelling_word(
+                            &mut *current_spelling,
+                            &mut *letter_stash,
+                            &mut *next_state,
+                            &*db,
+                            &mut commands,
+                            meshes,
+                            materials,
+                            &*spellbook,
+                            &*demo,
+                            &*sheet,
+                        );
+                    } else {
+                        warn!("SubmitSpelling skipped: rendering assets not available");
+                    }
+                    // Mesh/material resources are consumed by submit_spelling_word; return to avoid further use.
+                    return;
+                }
+            }
+
+            GameCommand::AddLetter(c) => {
+                current_spelling.word.push(*c);
+            }
+
+            GameCommand::Backspace => {
+                current_spelling.word.pop();
+            }
+
+            GameCommand::ClearSpelling => {
+                current_spelling.word.clear();
+            }
+
+            GameCommand::Swipe(choice) => {
+                trail.swipe_history.push(*choice);
+                trail.current_word = Some(current_spelling.word.clone());
+            }
+
+            GameCommand::DismissReview => {
+                if *state.get() == GameState::Reviewing {
+                    next_state.set(GameState::Playing);
+                }
+            }
+
+            GameCommand::NewGame => {
+                if *state.get() == GameState::MainMenu {
+                    let _ = std::fs::remove_file("save.json");
+                    commands.insert_resource(crate::tutorial::TutorialState { step: 0, active: true });
+                    next_state.set(GameState::Collecting);
+                }
+            }
+
+            GameCommand::ContinueGame => {
+                if *state.get() == GameState::MainMenu {
+                    next_state.set(GameState::Collecting);
+                }
+            }
+
+            GameCommand::OpenSettings => {
+                info!("OpenSettings command received (not implemented yet)");
+            }
+
+            GameCommand::TransitionTo(target) => {
+                next_state.set(target.clone());
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -31,11 +31,15 @@
   - Write integration test: messages sent → messages received
   - 22 tests passing, 0 warnings
 
-### P1.2: Create command handler system
-- [ ] **Windsurf task** — Create `fn handle_game_commands` system
+### P1.2: Create command handler system ✅
+- [x] **Windsurf task** — Create `fn handle_game_commands` system
   - Reads `MessageReader<GameCommand>` and dispatches to existing logic
   - This is the bridge between input systems and game logic
   - Does NOT replace input systems yet — just receives messages
+  - Resources grouped into tuples to stay within Bevy's system-parameter limit
+  - Optional `AssetServer` / `Assets<Mesh>` / `Assets<StandardMaterial>` so tests don't need full render stack
+  - Made `letter::submit_spelling_word` pub and use plain references for broader reuse
+  - 24 tests passing, 0 warnings
 
 ### P1.3: Reroute input to commands
 - [ ] **Windsurf task** — Refactor `handle_ui_button_interactions`

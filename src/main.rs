@@ -20,6 +20,7 @@ mod spatial_deck;
 mod altar;
 mod dialogue_ui;
 mod blocklist;
+mod commands;
 
 use std::collections::HashMap;
 use bevy::prelude::*;
@@ -62,6 +63,8 @@ fn main() {
         ))
         .insert_resource(ClearColor(Color::srgb(0.2, 0.2, 0.3)))
         .init_state::<GameState>()
+        .add_message::<commands::GameCommand>()
+        .init_resource::<commands::LastCommand>()
         .init_resource::<GameDatabase>()
         .init_resource::<Deck>()
         .init_resource::<Hand>()

@@ -21,21 +21,21 @@
 
 ## Phase 1: Command-Driven Architecture (Windsurf — complex reasoning)
 
-### P1.1: Create GameCommand enum
-- [ ] **Windsurf task** — Create `src/commands.rs` with GameCommand enum
-  - Enum variants: SubmitWord(String), SelectCard(usize), PlayCard,
-    StartBattle, PlayBattleCard(String), FillQuestSlot(usize, String),
-    CompleteQuest, SkipCard, SwipeYes, SwipeNo, SwipeDeeper,
-    PetAction(PetActionType), FeedPet, AttunePet(Channel)
-  - Register as Bevy Event: `app.add_event::<GameCommand>()`
+### P1.1: Create GameCommand enum ✅
+- [x] **Windsurf task** — Create `src/commands.rs` with GameCommand enum
+  - Enum variants: SubmitSpelling, SelectCard, PlayCard, SkipCard, StartBattle,
+    PlayBattleCard, FleeBattle, StartQuest, FillQuestSlot, CompleteQuest,
+    CancelQuest, Swipe, DismissReview, NewGame, ContinueGame, OpenSettings, TransitionTo
+  - Register as Bevy Message: `app.add_message::<GameCommand>()` (Bevy 0.18 uses Messages, not Events)
   - Add `mod commands;` to both lib.rs and main.rs
-  - Write integration test: events sent → events received
+  - Write integration test: messages sent → messages received
+  - 22 tests passing, 0 warnings
 
 ### P1.2: Create command handler system
 - [ ] **Windsurf task** — Create `fn handle_game_commands` system
-  - Reads `EventReader<GameCommand>` and dispatches to existing logic
+  - Reads `MessageReader<GameCommand>` and dispatches to existing logic
   - This is the bridge between input systems and game logic
-  - Does NOT replace input systems yet — just receives events
+  - Does NOT replace input systems yet — just receives messages
 
 ### P1.3: Reroute input to commands
 - [ ] **Windsurf task** — Refactor `handle_ui_button_interactions`

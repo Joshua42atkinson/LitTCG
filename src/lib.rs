@@ -17,6 +17,7 @@ pub mod tutorial;
 pub mod paywall;
 pub mod time_cycle;
 pub mod blocklist;
+pub mod commands;
 
 
 

@@ -6,6 +6,7 @@ use communication_class::quest::{self, QuestSession};
 use communication_class::battle::{self, BattleSession};
 use communication_class::save::{self, SaveData};
 use communication_class::blocklist;
+use communication_class::commands::{GameCommand, LastCommand};
 use bevy::prelude::*;
 use std::collections::HashMap;
 
@@ -276,3 +277,30 @@ fn test_blocklist_filters_inappropriate_words() {
     assert!(blocklist::is_clean("grass"), "grass should be clean");
 }
 
+#[test]
+fn test_game_command_messages() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.add_message::<GameCommand>();
+    app.init_resource::<LastCommand>();
+
+    // System that records the last command so we can assert it was received.
+    app.add_systems(
+        Update,
+        |mut messages: MessageReader<GameCommand>, mut last: ResMut<LastCommand>| {
+            for msg in messages.read() {
+                last.0 = Some(msg.clone());
+            }
+        },
+    );
+
+    // Send a StartQuest command and advance the app schedule.
+    let cmd = GameCommand::StartQuest("Barnaby".to_string());
+    app.world_mut().write_message(cmd.clone());
+    app.update();
+
+    let last = app.world().resource::<LastCommand>();
+    assert_eq!(last.0, Some(cmd), "GameCommand should be received and recorded");
+}

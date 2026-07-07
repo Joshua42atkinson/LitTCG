@@ -4,6 +4,12 @@ use rand::Rng;
 use crate::components::*;
 use crate::database::*;
 
+const PET_SPAWN_POSITION: Vec3 = Vec3::new(0.0, 1.5, -2.0);
+const PET_LOGOS_MULTIPLIER: f32 = 20.0;
+const PET_PATHOS_MULTIPLIER: f32 = 10.0;
+const PET_ETHOS_MULTIPLIER: f32 = 10.0;
+const PET_SPEED_MULTIPLIER: f32 = 10.0;
+
 #[derive(Component)]
 pub struct LetterCrystal {
     pub letter: char,
@@ -325,10 +331,10 @@ pub fn submit_spelling_word(
 
         // Calculate stats
         let stats = PetStats {
-            logos: word_stats.concreteness * 20.0,
-            pathos: word_stats.valence * 10.0,
-            ethos: word_stats.dominance * 10.0,
-            speed: word_stats.intensity * 10.0,
+            logos: word_stats.concreteness * PET_LOGOS_MULTIPLIER,
+            pathos: word_stats.valence * PET_PATHOS_MULTIPLIER,
+            ethos: word_stats.dominance * PET_ETHOS_MULTIPLIER,
+            speed: word_stats.intensity * PET_SPEED_MULTIPLIER,
         };
 
         // Classify emotive state using FACES detector
@@ -348,7 +354,7 @@ pub fn submit_spelling_word(
         commands.spawn((
             Mesh3d(meshes.add(Sphere::new(0.5).mesh().ico(4).unwrap())),
             MeshMaterial3d(main_mat.clone()),
-            Transform::from_xyz(0.0, 1.5, -2.0),
+            Transform::from_translation(PET_SPAWN_POSITION),
             PetAvatar { 
                 word: spelling.word.clone(),
                 pet_type: sheet.active_summon_class,
@@ -381,7 +387,7 @@ pub fn submit_spelling_word(
         commands.spawn((
             Mesh3d(meshes.add(Sphere::new(0.5).mesh().ico(2).unwrap())),
             MeshMaterial3d(glitch_mat),
-            Transform::from_xyz(0.0, 1.5, -2.0),
+            Transform::from_translation(PET_SPAWN_POSITION),
             PetAvatar { 
                 word: spelling.word.clone(),
                 pet_type: sheet.active_summon_class,

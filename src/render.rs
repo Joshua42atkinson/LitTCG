@@ -4,6 +4,9 @@ use bevy::prelude::*;
 use faces_protocol::{Container, Focus, Action};
 use crate::components::*;
 
+const AURA_PARTICLE_COUNT: usize = 10;
+const BURST_PARTICLE_COUNT: usize = 20;
+
 #[cfg(not(feature = "flat2d"))]
 pub struct RenderPlugin;
 
@@ -378,14 +381,14 @@ fn spawn_avatar_visuals(
                 OrbitalRing { speed: 1.0 },
             ));
 
-            // Spawn spiraling aura particles (10 glowing spheres)
+            // Spawn spiraling aura particles (glowing spheres)
             let particle_mat = materials.add(StandardMaterial {
                 base_color: core_color,
                 emissive: (core_color.to_srgba() * 1.5).into(),
                 ..default()
             });
 
-            for i in 0..10 {
+            for i in 0..AURA_PARTICLE_COUNT {
                 parent.spawn((
                     Mesh3d(meshes.add(Sphere::new(0.03).mesh().ico(1).unwrap())),
                     MeshMaterial3d(particle_mat.clone()),
@@ -398,7 +401,7 @@ fn spawn_avatar_visuals(
         // Spawn Burst Particles independently
         use rand::Rng;
         let mut rng = rand::thread_rng();
-        for _ in 0..20 {
+        for _ in 0..BURST_PARTICLE_COUNT {
             let vx = rng.gen_range(-3.0..3.0);
             let vy = rng.gen_range(1.0..5.0);
             let vz = rng.gen_range(-3.0..3.0);
@@ -485,10 +488,11 @@ fn animate_particles(
     mut query: Query<(&mut Transform, &AuraParticle)>,
 ) {
     let t = time.elapsed_secs();
+    let count = AURA_PARTICLE_COUNT as f32;
     for (mut tf, particle) in &mut query {
-        let angle = t * particle.speed + (particle.index as f32) * (2.0 * std::f32::consts::PI / 10.0);
+        let angle = t * particle.speed + (particle.index as f32) * (2.0 * std::f32::consts::PI / count);
         let radius = 0.95 + (t + particle.index as f32).sin() * 0.08;
-        let y_pos = ((particle.index as f32 / 10.0) - 0.5) + (t * 0.6).sin() * 0.12;
+        let y_pos = ((particle.index as f32 / count) - 0.5) + (t * 0.6).sin() * 0.12;
         
         tf.translation.x = radius * angle.cos();
         tf.translation.z = radius * angle.sin();

@@ -4,6 +4,11 @@ use bevy::prelude::*;
 use crate::components::*;
 use crate::database::*;
 
+const RHETORIC_CRIT_MULTIPLIER: f32 = 2.5;
+const GOLEM_DISTANCE_BASE_MULTIPLIER: f32 = 1.5;
+const GOLEM_DISTANCE_SCALE: f32 = 0.2;
+const INEFFECTIVE_COUNTER_MULTIPLIER: f32 = 0.5;
+
 #[derive(Resource, Debug, Clone)]
 pub struct BattleSession {
     pub typo_word: String,
@@ -89,12 +94,12 @@ pub fn play_battle_card(
             if logos_diff > pathos_diff && logos_diff > ethos_diff {
                 // Structural Paradox (Logos dominant)
                 is_synonym_logic = false;
-                damage_multiplier = 2.5;
+                damage_multiplier = RHETORIC_CRIT_MULTIPLIER;
                 is_effective = true;
             } else {
                 // Semantic Equivalence (Pathos/Ethos dominant)
                 is_synonym_logic = true;
-                damage_multiplier = 2.5;
+                damage_multiplier = RHETORIC_CRIT_MULTIPLIER;
                 is_effective = true;
             }
         } else if sheet.active_summon_class == SummonClass::GrammarGolem {
@@ -140,17 +145,17 @@ pub fn play_battle_card(
             if damage_multiplier > 1.0 {
                 is_effective = true;
             } else {
-                damage_multiplier = 0.5;
+                damage_multiplier = INEFFECTIVE_COUNTER_MULTIPLIER;
             }
         } else {
             let distance = semantic_distance(typo_stats, played_stats);
             
             // Emergent counters: high distance = opposing concepts (e.g. Fire vs Water)
             if distance > 4.0 {
-                damage_multiplier = 1.5 + (distance - 4.0) * 0.2;
+                damage_multiplier = GOLEM_DISTANCE_BASE_MULTIPLIER + (distance - 4.0) * GOLEM_DISTANCE_SCALE;
                 is_effective = true;
             } else if distance < 2.0 {
-                damage_multiplier = 0.5;
+                damage_multiplier = INEFFECTIVE_COUNTER_MULTIPLIER;
             }
         }
     }

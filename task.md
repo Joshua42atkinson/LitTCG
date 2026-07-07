@@ -97,7 +97,7 @@
   - Commit: "P1.5.5: Enable clippy lints and fix warnings"
 
 ### P1.5.6: Extract magic numbers to constants
-- [ ] Find hardcoded numeric literals in:
+- [x] Find hardcoded numeric literals in:
   - src/letter.rs: pet spawn position (0.0, 1.5, -2.0)
   - src/letter.rs: stat multipliers (20.0, 10.0, 10.0, 10.0)
   - src/battle.rs: damage multipliers (2.5, 1.5, 0.75)

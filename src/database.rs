@@ -235,6 +235,7 @@ impl Default for GameDatabase {
 }
 
 impl GameDatabase {
+    /// Parses the word_database.json string into a map of word -> psycholinguistic stats.
     pub fn parse_words(words_str: &str) -> HashMap<String, WordStats> {
         let mut words = HashMap::new();
         match serde_json::from_str::<HashMap<String, serde_json::Value>>(words_str) {
@@ -251,6 +252,7 @@ impl GameDatabase {
         words
     }
 
+    /// Parses the synonym_database.json string into a map of word -> synonyms/antonyms/distractors.
     pub fn parse_synonyms(syns_str: &str) -> HashMap<String, SynonymEntry> {
         let mut syns = HashMap::new();
         match serde_json::from_str::<HashMap<String, serde_json::Value>>(syns_str) {
@@ -267,6 +269,7 @@ impl GameDatabase {
         syns
     }
 
+    /// Loads all five embedded JSON databases (words, synonyms, etymology, quests, NPCs).
     pub fn load_from_embedded() -> Result<Self, String> {
         Ok(Self {
             words: Self::parse_words(include_str!("../assets/word_database.json")),

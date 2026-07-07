@@ -2,6 +2,7 @@
 use bevy::prelude::*;
 use crate::components::*;
 
+/// Refills the player's hand from the deck and records encounters in the spellbook.
 pub fn draw_cards(
     mut deck: ResMut<Deck>,
     mut hand: ResMut<Hand>,
@@ -40,6 +41,7 @@ pub fn draw_cards(
     }
 }
 
+/// Selects or deselects a hand card using number keys (1-5) or Escape.
 pub fn select_card_by_key(
     keys: Res<ButtonInput<KeyCode>>,
     mut hand: ResMut<Hand>,

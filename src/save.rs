@@ -12,6 +12,7 @@ pub struct SaveData {
     pub student_trail: StudentTrail,
 }
 
+/// Writes the current character sheet, spellbook, and student trail to save.json.
 pub fn save_game(
     sheet: &CharacterSheet,
     spellbook: &SpellBook,
@@ -31,6 +32,7 @@ pub fn save_game(
     Ok(())
 }
 
+/// Loads SaveData from save.json, returning an error if the file is missing or corrupt.
 pub fn load_game() -> Result<SaveData, std::io::Error> {
     let mut file = File::open("save.json")?;
     let mut contents = String::new();
@@ -40,6 +42,7 @@ pub fn load_game() -> Result<SaveData, std::io::Error> {
     Ok(data)
 }
 
+/// Bevy system that periodically saves progress. Disabled in demo mode.
 pub fn auto_save_system(
     sheet: Res<CharacterSheet>,
     spellbook: Res<SpellBook>,

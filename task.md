@@ -74,13 +74,13 @@
   - Commit: "P1.5.2: Add input action logging"
 
 ### P1.5.3: Create .gitignore for build artifacts
-- [ ] Add/Update `.gitignore` in LitTTC/
+- [x] Add/Update `.gitignore` in LitTTC/
   - Ignore: /target, /dist, *.wasm, *.js (in dist), overnight.log
   - Keep: src/, assets/, tests/, Cargo.toml, Cargo.lock
   - Commit: "P1.5.3: Update .gitignore for build artifacts"
 
 ### P1.5.4: Add doc comments to all public functions
-- [ ] Add `///` doc comments to all `pub fn` in:
+- [x] Add `///` doc comments to all `pub fn` in:
   - src/database.rs (load_from_embedded, etc.)
   - src/deck.rs (shuffle, draw, etc.)
   - src/save.rs (save, load, etc.)

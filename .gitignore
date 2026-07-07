@@ -1,1 +1,30 @@
+# Rust build artifacts
 /target
+
+# Cargo lock is included for binary crates; remove if this becomes a library
+# Cargo.lock
+
+# WASM / trunk output
+/dist
+*.wasm
+*.js
+
+# Android packaging
+*.apk
+*.aab
+*.keystore
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs / temp
+overnight.log
+*.log
+tmp/
+
+# Generated dependency fingerprints in debug builds
+**/.fingerprint/

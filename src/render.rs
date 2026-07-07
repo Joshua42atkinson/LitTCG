@@ -507,6 +507,7 @@ fn animate_rings(
 }
 
 #[cfg(not(feature = "flat2d"))]
+#[allow(clippy::type_complexity)]
 fn update_pet_expressions(
     mut materials: ResMut<Assets<StandardMaterial>>,
     changed_heads: Query<(&PetFacesState, &MeshMaterial3d<StandardMaterial>), Changed<PetFacesState>>,

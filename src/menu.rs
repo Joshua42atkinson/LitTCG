@@ -114,6 +114,7 @@ fn spawn_main_menu(
     });
 }
 
+#[allow(clippy::type_complexity)]
 fn menu_interaction(
     mut writer: MessageWriter<crate::commands::GameCommand>,
     mut interaction_query: Query<

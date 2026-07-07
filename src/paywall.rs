@@ -79,6 +79,7 @@ fn spawn_paywall_ui(mut commands: Commands) {
     });
 }
 
+#[allow(clippy::type_complexity)]
 fn paywall_interaction(
     mut interaction_query: Query<
         (&Interaction, &mut BackgroundColor),

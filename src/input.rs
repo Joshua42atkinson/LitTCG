@@ -97,6 +97,7 @@ pub fn keyboard_input(
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub fn handle_ui_button_interactions(
     mut writer: MessageWriter<crate::commands::GameCommand>,
     state: Res<State<GameState>>,

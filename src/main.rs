@@ -415,6 +415,7 @@ fn spawn_vr_hand(
 }
 
 #[allow(dead_code)]
+#[allow(clippy::type_complexity)]
 fn cleanup_vr_hand(
     mut commands: Commands,
     query: Query<Entity, Or<(With<VrHandCard>, With<VrSubmitButton>)>>,
@@ -497,7 +498,7 @@ fn update_frame_diagnostics(
     if delta > 0.0 {
         diagnostics.fps = 1.0 / delta;
     }
-    if diagnostics.frame_count % 120 == 0 {
+    if diagnostics.frame_count.is_multiple_of(120) {
         info!("FPS Diagnostic Overlay: {:.1} fps", diagnostics.fps);
     }
 }

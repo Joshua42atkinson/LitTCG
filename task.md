@@ -90,7 +90,7 @@
   - Commit: "P1.5.4: Add doc comments to public functions"
 
 ### P1.5.5: Add clippy lint annotations
-- [ ] Run `cargo clippy` and fix all warnings
+- [x] Run `cargo clippy` and fix all warnings
   - Add `#![warn(clippy::all)]` to lib.rs
   - Fix any clippy warnings that appear
   - Run cargo test to verify all tests still pass

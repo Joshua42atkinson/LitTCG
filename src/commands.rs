@@ -87,6 +87,8 @@ pub fn log_state_transition(current: &GameState, next: GameState) {
 /// This system is the single place where those messages are interpreted and executed.
 ///
 /// Resources are grouped into tuples to stay within Bevy's system-parameter limit.
+#[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 pub fn handle_game_commands(
     mut commands: Commands,
     mut messages: MessageReader<GameCommand>,
@@ -322,16 +324,16 @@ pub fn handle_game_commands(
                 if *state.get() == GameState::Constructing {
                     if let (Some(meshes), Some(materials)) = (meshes.take(), materials.take()) {
                         crate::letter::submit_spelling_word(
-                            &mut *current_spelling,
-                            &mut *letter_stash,
-                            &mut *next_state,
-                            &*db,
+                            &mut current_spelling,
+                            &mut letter_stash,
+                            &mut next_state,
+                            &db,
                             &mut commands,
                             meshes,
                             materials,
-                            &*spellbook,
-                            &*demo,
-                            &*sheet,
+                            &spellbook,
+                            &demo,
+                            &sheet,
                             &state,
                         );
                     } else {

@@ -112,7 +112,7 @@ fn update_dialogue_ui(
 ) {
     // For testing, let's toggle between Barnaby and Kael every 5 seconds
     let seconds = (time.elapsed_secs() / 5.0) as u32;
-    let new_npc = if seconds % 2 == 0 { "Barnaby" } else { "Kael" };
+    let new_npc = if seconds.is_multiple_of(2) { "Barnaby" } else { "Kael" };
     
     if active_npc.as_deref() != Some(new_npc) {
         *active_npc = Some(new_npc.to_string());

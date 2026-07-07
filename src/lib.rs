@@ -1,4 +1,5 @@
 // lib.rs — Android NDK entry point and shared game structures
+#![warn(clippy::all)]
 pub mod components;
 pub mod database;
 pub mod deck;

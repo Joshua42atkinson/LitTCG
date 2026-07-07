@@ -113,6 +113,7 @@ pub struct SuffixData {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+#[derive(Default)]
 pub struct EtymologyDB {
     #[serde(rename = "Roots")]
     pub roots: HashMap<String, RootData>,
@@ -122,15 +123,6 @@ pub struct EtymologyDB {
     pub whitelist: HashMap<String, Vec<String>>,
 }
 
-impl Default for EtymologyDB {
-    fn default() -> Self {
-        Self {
-            roots: HashMap::new(),
-            suffixes: HashMap::new(),
-            whitelist: HashMap::new(),
-        }
-    }
-}
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct QuestTemplate {
@@ -165,6 +157,7 @@ pub struct NpcQuest {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+#[derive(Default)]
 pub struct QuestData {
     #[serde(rename = "ArchetypeQuests")]
     pub archetype_quests: HashMap<String, Vec<QuestTemplate>>,
@@ -172,14 +165,6 @@ pub struct QuestData {
     pub npc_chains: HashMap<String, Vec<NpcQuest>>,
 }
 
-impl Default for QuestData {
-    fn default() -> Self {
-        Self {
-            archetype_quests: HashMap::new(),
-            npc_chains: HashMap::new(),
-        }
-    }
-}
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct NpcDialogue {
@@ -214,6 +199,7 @@ pub struct NpcData {
 }
 
 #[derive(Resource, Debug, Clone)]
+#[derive(Default)]
 pub struct GameDatabase {
     pub words: HashMap<String, WordStats>,
     pub synonyms: HashMap<String, SynonymEntry>,
@@ -222,17 +208,6 @@ pub struct GameDatabase {
     pub npcs: HashMap<String, NpcData>,
 }
 
-impl Default for GameDatabase {
-    fn default() -> Self {
-        Self {
-            words: HashMap::new(),
-            synonyms: HashMap::new(),
-            etymology: EtymologyDB::default(),
-            quests: QuestData::default(),
-            npcs: HashMap::new(),
-        }
-    }
-}
 
 impl GameDatabase {
     /// Parses the word_database.json string into a map of word -> psycholinguistic stats.

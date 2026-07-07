@@ -252,6 +252,7 @@ pub fn cleanup_holographic_stash(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn submit_spelling_word(
     spelling: &mut CurrentSpelling,
     _stash: &mut LetterStash,

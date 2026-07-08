@@ -1,30 +1,46 @@
 // main.rs — Core Bevy entry point for Desktop target
-mod components;
-mod database;
-mod deck;
-mod input;
-mod render;
-mod quest;
-mod battle;
-mod letter;
-mod hand_tracking;
-mod save;
-mod spatial_ui;
-mod chat;
-mod hud;
-mod menu;
-mod tutorial;
-mod paywall;
-mod time_cycle;
-mod spatial_deck;
-mod altar;
-mod dialogue_ui;
-mod blocklist;
-mod commands;
+pub mod core {
+    pub mod components;
+    pub mod database;
+    pub mod asset_catalog;
+    pub mod generated_assets;
+    pub mod deck;
+    pub mod input;
+    pub mod render;
+    pub mod quest;
+    pub mod battle;
+    pub mod letter;
+    pub mod hand_tracking;
+    pub mod save;
+    pub mod spatial_ui;
+    pub mod chat;
+    pub mod hud;
+    pub mod menu;
+    pub mod tutorial;
+    pub mod paywall;
+    pub mod settings;
+    pub mod difficulty;
+    pub mod pet_collection;
+    pub mod pet_reveal;
+    pub mod time_cycle;
+    pub mod spatial_deck;
+    pub mod altar;
+    pub mod dialogue_ui;
+    pub mod blocklist;
+    pub mod commands;
+    pub mod diagnostics;
+    pub mod platform_paths;
+    pub mod performance;
+}
 
-use std::collections::HashMap;
+pub mod bridge {
+    pub mod tts_client;
+    pub mod url_opener;
+}
+
+pub use core::*;
+
 use bevy::prelude::*;
-use bevy::asset::AssetEvent;
 use components::*;
 use database::*;
 use letter::*;
@@ -36,9 +52,7 @@ fn main() {
                 primary_window: Some(Window {
                     title: "LitTCG — Literary Trading Card Game".to_string(),
                     resolution: bevy::window::WindowResolution::new(1280, 720),
-                    canvas: Some("#daydream-canvas".to_string()),
-                    fit_canvas_to_parent: true,
-                    prevent_default_event_handling: true,
+                    mode: bevy::window::WindowMode::Windowed,
                     ..default()
                 }),
                 ..default()
@@ -61,6 +75,13 @@ fn main() {
             altar::AltarPlugin,
             dialogue_ui::DialogueUiPlugin,
         ))
+        .add_plugins((
+            performance::PerformancePlugin,
+            settings::SettingsPlugin,
+            difficulty::DifficultyPlugin,
+            pet_collection::PetCollectionPlugin,
+            pet_reveal::PetRevealPlugin,
+        ))
         .insert_resource(ClearColor(Color::srgb(0.2, 0.2, 0.3)))
         .init_state::<GameState>()
         .add_message::<commands::GameCommand>()
@@ -74,20 +95,27 @@ fn main() {
         .init_resource::<CurrentSpelling>()
         .init_resource::<CharacterSheet>()
         .init_resource::<SpellBook>()
-        .init_resource::<StudentTrail>()
+        .init_resource::<WordTrail>()
         .init_resource::<CurrentSlide>()
         .init_resource::<hand_tracking::HandTrackingState>()
-        .init_resource::<FrameDiagnostics>()
-        .init_resource::<quest::CurriculumManager>()
+        .init_resource::<diagnostics::FrameDiagnostics>()
+        .init_resource::<quest::GradeManager>()
         .init_resource::<hand_tracking::PinchEvents>()
         .init_resource::<crate::components::TimeScale>()
-        .init_resource::<GameGrid>()
         .init_resource::<ActiveGestures>()
-        .add_systems(Startup, setup_world)
-        .add_systems(OnEnter(GameState::Loading), start_loading_database)
-        .add_systems(Update, check_database_loading.run_if(in_state(GameState::Loading)))
-        .add_systems(Update, hot_reload_database)
-        .add_systems(OnEnter(GameState::Collecting), initialize_player_deck)
+        .insert_resource(crate::settings::GameSettings::load().unwrap_or_default());
+
+    #[cfg(not(feature = "flat2d"))]
+    app.add_systems(Startup, (render::setup_world, generated_assets::load_generated_assets));
+
+    app.add_systems(OnEnter(GameState::Loading), (database::spawn_loading_ui, database::start_loading_database))
+        .add_systems(Update, (
+            database::update_loading_progress,
+            database::check_database_loading,
+        ).run_if(in_state(GameState::Loading)))
+        .add_systems(OnExit(GameState::Loading), database::cleanup_loading_ui)
+        .add_systems(Update, database::hot_reload_database)
+        .add_systems(OnEnter(GameState::Collecting), deck::initialize_player_deck)
         .add_systems(Update, (
             spawn_letter_crystals,
             animate_crystals,
@@ -101,581 +129,54 @@ fn main() {
 
     #[cfg(feature = "xr")]
     {
-        app.add_systems(OnEnter(GameState::Reviewing), (spawn_review_ui_xr, save::auto_save_system))
-           .add_systems(OnExit(GameState::Reviewing), cleanup_review_ui_xr);
+        app.add_systems(OnEnter(GameState::Reviewing), (hud::spawn_review_ui_xr, save::auto_save_system))
+           .add_systems(OnExit(GameState::Reviewing), hud::cleanup_review_ui_xr);
     }
 
     #[cfg(not(feature = "xr"))]
     {
-        app.add_systems(OnEnter(GameState::Reviewing), (spawn_review_ui_2d, save::auto_save_system))
-           .add_systems(OnExit(GameState::Reviewing), cleanup_review_ui_2d);
+        app.add_systems(OnEnter(GameState::Reviewing), (hud::spawn_review_ui_2d, save::auto_save_system))
+           .add_systems(OnExit(GameState::Reviewing), hud::cleanup_review_ui_2d);
     }
 
-    app.add_systems(Update, review_input_system.run_if(in_state(GameState::Reviewing)))
+    app.add_systems(Update, hud::review_input_system.run_if(in_state(GameState::Reviewing)))
        .add_systems(Update, commands::handle_game_commands)
        .add_systems(Update, (
             hand_tracking::update_hand_tracking,
             deck::draw_cards,
-            update_frame_diagnostics,
+            diagnostics::update_frame_diagnostics,
             input::drag_start,
             input::drag_move,
             input::drag_end,
             input::keyboard_input,
             input::handle_touch_input,
-            input::handle_ui_button_interactions,
+            input::handle_hand_card_button_interactions,
+            input::handle_play_card_button_interactions,
+            input::handle_skip_button_interactions,
+            input::handle_quest_action_button_interactions,
+            input::handle_battle_action_button_interactions,
             hand_tracking::grammar_fusion_system,
+            letter::handle_keyboard_spelling,
         ).before(commands::handle_game_commands));
 
     #[cfg(feature = "xr")]
     {
-        app.add_systems(OnEnter(GameState::Constructing), spawn_holographic_stash)
-           .add_systems(Update, handle_vr_spelling.run_if(in_state(GameState::Constructing)).before(commands::handle_game_commands))
-           .add_systems(OnExit(GameState::Constructing), cleanup_holographic_stash)
-           .add_systems(OnEnter(GameState::Questing), spawn_vr_hand)
-           .add_systems(Update, vr_quest_interaction.run_if(in_state(GameState::Questing)).before(commands::handle_game_commands))
-           .add_systems(OnExit(GameState::Questing), cleanup_vr_hand)
-           .add_systems(OnEnter(GameState::Battling), spawn_vr_hand)
-           .add_systems(Update, vr_battle_interaction.run_if(in_state(GameState::Battling)).before(commands::handle_game_commands))
-           .add_systems(OnExit(GameState::Battling), cleanup_vr_hand);
+        app.add_systems(OnEnter(GameState::Constructing), letter::spawn_holographic_stash)
+           .add_systems(Update, letter::handle_vr_spelling.run_if(in_state(GameState::Constructing)).before(commands::handle_game_commands))
+           .add_systems(OnExit(GameState::Constructing), letter::cleanup_holographic_stash)
+           .add_systems(OnEnter(GameState::Questing), hand_tracking::spawn_vr_hand)
+           .add_systems(Update, hand_tracking::vr_quest_interaction.run_if(in_state(GameState::Questing)).before(commands::handle_game_commands))
+           .add_systems(OnExit(GameState::Questing), hand_tracking::cleanup_vr_hand)
+           .add_systems(OnEnter(GameState::Battling), hand_tracking::spawn_vr_hand)
+           .add_systems(Update, hand_tracking::vr_battle_interaction.run_if(in_state(GameState::Battling)).before(commands::handle_game_commands))
+           .add_systems(OnExit(GameState::Battling), hand_tracking::cleanup_vr_hand);
     }
 
     #[cfg(not(feature = "xr"))]
     {
-        app.add_systems(Update, handle_keyboard_spelling.run_if(in_state(GameState::Constructing)).before(commands::handle_game_commands))
-           .add_systems(Update, keyboard_quest_interaction.run_if(in_state(GameState::Questing)).before(commands::handle_game_commands))
-           .add_systems(Update, keyboard_battle_interaction.run_if(in_state(GameState::Battling)).before(commands::handle_game_commands));
+        app.add_systems(Update, input::keyboard_quest_interaction.run_if(in_state(GameState::Questing)).before(commands::handle_game_commands))
+           .add_systems(Update, input::keyboard_battle_interaction.run_if(in_state(GameState::Battling)).before(commands::handle_game_commands));
     }
 
     app.run();
-}
-
-fn setup_world(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    // Spawn camera with HDR, Bloom, and Screen-Space Ambient Occlusion (SSAO) for Desktop
-    #[cfg(all(not(feature = "xr"), not(target_arch = "wasm32")))]
-    commands.spawn((
-        Camera3d::default(),
-        bevy::render::view::Hdr,
-        bevy::post_process::bloom::Bloom::NATURAL,
-        bevy::pbr::ScreenSpaceAmbientOcclusion::default(),
-        bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface,
-        Transform::from_xyz(0.0, 2.0, 5.0).looking_at(Vec3::new(0.0, 1.5, 0.0), Vec3::Y),
-    ));
-
-    // Spawn lightweight camera for XR or WASM
-    #[cfg(any(feature = "xr", target_arch = "wasm32"))]
-    commands.spawn((
-        Camera3d::default(),
-        bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface,
-        Transform::from_xyz(0.0, 2.0, 5.0).looking_at(Vec3::new(0.0, 1.5, 0.0), Vec3::Y),
-    ));
-
-    // Ground plane
-    commands.spawn((
-        Mesh3d(meshes.add(Plane3d::new(Vec3::Y, Vec2::new(10.0, 10.0)))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgb(0.2, 0.22, 0.25),
-            perceptual_roughness: 0.9,
-            ..default()
-        })),
-    ));
-
-    // Directional light
-    commands.spawn((
-        DirectionalLight {
-            shadows_enabled: true,
-            ..default()
-        },
-        Transform::from_xyz(4.0, 8.0, 4.0).looking_at(Vec3::ZERO, Vec3::Y),
-        crate::render::SkyLight,
-    ));
-
-    info!("3D Environment initialized successfully!");
-}
-
-#[derive(Resource)]
-struct LoadingDatabases {
-    words: Handle<RawJsonAsset>,
-    syns: Handle<RawJsonAsset>,
-    etym: Handle<RawJsonAsset>,
-    quest: Handle<RawJsonAsset>,
-    npcs: Handle<RawJsonAsset>,
-}
-
-fn start_loading_database(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-) {
-    info!("Starting database asset loading...");
-    commands.insert_resource(LoadingDatabases {
-        words: asset_server.load("word_database.json"),
-        syns: asset_server.load("synonym_database.json"),
-        etym: asset_server.load("etymology_db.json"),
-        quest: asset_server.load("quest_data.json"),
-        npcs: asset_server.load("lore_db.json"),
-    });
-}
-
-fn check_database_loading(
-    mut commands: Commands,
-    loading: Res<LoadingDatabases>,
-    assets: Res<Assets<RawJsonAsset>>,
-    mut next_state: ResMut<NextState<GameState>>,
-    state: Res<State<GameState>>,
-) {
-    let words = assets.get(&loading.words);
-    let syns = assets.get(&loading.syns);
-    let etym = assets.get(&loading.etym);
-    let quest = assets.get(&loading.quest);
-    let npcs = assets.get(&loading.npcs);
-
-    if let (Some(w), Some(s), Some(e), Some(q), Some(n)) = (words, syns, etym, quest, npcs) {
-        info!("All database assets loaded! Parsing...");
-        let words = GameDatabase::parse_words(&w.text);
-        let synonyms = GameDatabase::parse_synonyms(&s.text);
-        let etymology: EtymologyDB = serde_json::from_str(&e.text).expect("Failed to parse etymology");
-        let quests: QuestData = serde_json::from_str(&q.text).expect("Failed to parse quests");
-        let npcs: HashMap<String, NpcData> = serde_json::from_str(&n.text).expect("Failed to parse npcs");
-
-        commands.insert_resource(GameDatabase {
-            words,
-            synonyms,
-            etymology,
-            quests,
-            npcs,
-        });
-
-        info!("Database parsed successfully. Transitioning to MainMenu.");
-        crate::commands::log_state_transition(state.get(), GameState::MainMenu);
-        next_state.set(GameState::MainMenu);
-    }
-}
-
-fn hot_reload_database(
-    mut events: MessageReader<AssetEvent<RawJsonAsset>>,
-    loading: Option<Res<LoadingDatabases>>,
-    assets: Res<Assets<RawJsonAsset>>,
-    db: Option<ResMut<GameDatabase>>,
-) {
-    let loading = match loading {
-        Some(l) => l,
-        None => return,
-    };
-    let mut db = match db {
-        Some(d) => d,
-        None => return,
-    };
-
-    for event in events.read() {
-        if let AssetEvent::Modified { id } = event {
-            if *id == loading.words.id() {
-                if let Some(asset) = assets.get(*id) {
-                    info!("Hot-reloading word_database.json!");
-                    db.words = GameDatabase::parse_words(&asset.text);
-                }
-            } else if *id == loading.syns.id() {
-                if let Some(asset) = assets.get(*id) {
-                    info!("Hot-reloading synonym_database.json!");
-                    db.synonyms = GameDatabase::parse_synonyms(&asset.text);
-                }
-            } else if *id == loading.etym.id() {
-                if let Some(asset) = assets.get(*id) {
-                    info!("Hot-reloading etymology_db.json!");
-                    if let Ok(etym) = serde_json::from_str(&asset.text) {
-                        db.etymology = etym;
-                    }
-                }
-            } else if *id == loading.quest.id() {
-                if let Some(asset) = assets.get(*id) {
-                    info!("Hot-reloading quest_data.json!");
-                    if let Ok(q) = serde_json::from_str(&asset.text) {
-                        db.quests = q;
-                    }
-                }
-            } else if *id == loading.npcs.id() {
-                if let Some(asset) = assets.get(*id) {
-                    info!("Hot-reloading lore_db.json!");
-                    if let Ok(n) = serde_json::from_str(&asset.text) {
-                        db.npcs = n;
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn initialize_player_deck(
-    db: Res<GameDatabase>,
-    curriculum: Res<crate::quest::CurriculumManager>,
-    mut deck: ResMut<Deck>,
-    mut spellbook: ResMut<SpellBook>,
-    mut stash: ResMut<LetterStash>,
-    mut sheet: ResMut<CharacterSheet>,
-    mut trail: ResMut<StudentTrail>,
-) {
-    info!("Initializing player deck from loaded curriculum database...");
-    
-    if let Ok(data) = save::load_game() {
-        *sheet = data.character_sheet;
-        *spellbook = data.spellbook;
-        *trail = data.student_trail;
-        for entry in &spellbook.entries {
-            deck.cards.push(entry.word.clone());
-        }
-        info!("Loaded save file!");
-    } else {
-        let valid_grades = curriculum.get_valid_grade_levels();
-        let mut pool: Vec<String> = db.words.iter()
-            .filter(|(_, stats)| valid_grades.contains(&stats.grade_level.as_str()))
-            .map(|(word, _)| word.clone())
-            .collect();
-        pool.sort();
-
-        if !pool.is_empty() {
-            for word in pool.iter().take(15) {
-                deck.cards.push(word.clone());
-                spellbook.record_encounter(word, Channel::Mind);
-            }
-        } else {
-            let default_words = ["abandoned", "abc", "ability", "patience", "clarity", "courage", "wisdom", "strength"];
-            for &word in &default_words {
-                deck.cards.push(word.to_string());
-                spellbook.record_encounter(word, Channel::Mind);
-            }
-        }
-    }
-
-    stash.letters.extend("PATIENCECLARITYCOURAGEWISDOMSTRENGTH".chars());
-}
-
-// Keyboard triggers removed in favor of VR Pinch events
-
-#[derive(Component)]
-pub struct VrHandCard(pub usize);
-
-#[derive(Component)]
-pub struct VrSubmitButton;
-
-#[allow(dead_code)]
-fn spawn_vr_hand(
-    mut commands: Commands,
-    hand: Res<Hand>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    state: Res<State<GameState>>,
-) {
-    let mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.8, 0.7, 0.5),
-        ..default()
-    });
-
-    let count = hand.cards.len();
-    for (i, word) in hand.cards.iter().enumerate() {
-        let spacing = 0.6;
-        let start_x = -((count as f32 - 1.0) * spacing) / 2.0;
-        let x = start_x + (i as f32 * spacing);
-        let pos = Vec3::new(x, 1.0, -1.0);
-
-        commands.spawn((
-            Mesh3d(meshes.add(Cuboid::new(0.4, 0.6, 0.02))),
-            MeshMaterial3d(mat.clone()),
-            Transform::from_translation(pos),
-            VrHandCard(i),
-        )).with_children(|inner| {
-            inner.spawn((
-                Text2d::new(word.clone()),
-                TextFont { font_size: 20.0, ..default() },
-                TextColor(Color::BLACK),
-                Transform::from_xyz(0.0, 0.0, 0.02),
-            ));
-        });
-    }
-
-    if *state.get() == GameState::Questing {
-        commands.spawn((
-            Mesh3d(meshes.add(Cuboid::new(0.8, 0.3, 0.02))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: Color::srgb(0.0, 0.8, 0.3),
-                ..default()
-            })),
-            Transform::from_xyz(0.0, 0.5, -1.0),
-            VrSubmitButton,
-        )).with_children(|inner| {
-            inner.spawn((
-                Text2d::new("Complete Quest"),
-                TextFont { font_size: 20.0, ..default() },
-                TextColor(Color::WHITE),
-                Transform::from_xyz(0.0, 0.0, 0.02),
-            ));
-        });
-    }
-}
-
-#[allow(dead_code)]
-#[allow(clippy::type_complexity)]
-fn cleanup_vr_hand(
-    mut commands: Commands,
-    query: Query<Entity, Or<(With<VrHandCard>, With<VrSubmitButton>)>>,
-) {
-    for entity in &query {
-        commands.entity(entity).despawn();
-    }
-}
-
-#[allow(dead_code)]
-fn vr_quest_interaction(
-    pinch_events: Res<hand_tracking::PinchEvents>,
-    hand: Res<Hand>,
-    session: Option<Res<quest::QuestSession>>,
-    mut writer: MessageWriter<commands::GameCommand>,
-    card_query: Query<(&GlobalTransform, &VrHandCard)>,
-    submit_query: Query<&GlobalTransform, With<VrSubmitButton>>,
-) {
-    if session.is_none() {
-        return;
-    }
-
-    for event in &pinch_events.events {
-        // Check submit button
-        for transform in &submit_query {
-            if event.position.distance(transform.translation()) < 0.4 {
-                writer.write(commands::GameCommand::CompleteQuest);
-                return;
-            }
-        }
-
-        // Check hand cards
-        for (transform, card) in &card_query {
-            if event.position.distance(transform.translation()) < 0.3 {
-                if card.0 < hand.cards.len() {
-                    writer.write(commands::GameCommand::FillQuestSlot(card.0));
-                }
-                return;
-            }
-        }
-    }
-}
-
-#[allow(dead_code)]
-fn vr_battle_interaction(
-    pinch_events: Res<hand_tracking::PinchEvents>,
-    hand: Res<Hand>,
-    session: Option<Res<battle::BattleSession>>,
-    mut writer: MessageWriter<commands::GameCommand>,
-    card_query: Query<(&GlobalTransform, &VrHandCard)>,
-) {
-    if session.is_none() {
-        return;
-    }
-
-    for event in &pinch_events.events {
-        for (transform, card) in &card_query {
-            if event.position.distance(transform.translation()) < 0.3 {
-                if card.0 < hand.cards.len() {
-                    writer.write(commands::GameCommand::PlayBattleCard(card.0));
-                }
-                return;
-            }
-        }
-    }
-}
-
-#[derive(Resource, Default, Debug, Clone)]
-pub struct FrameDiagnostics {
-    pub fps: f32,
-    pub frame_count: u32,
-}
-
-fn update_frame_diagnostics(
-    time: Res<Time>,
-    mut diagnostics: ResMut<FrameDiagnostics>,
-) {
-    diagnostics.frame_count += 1;
-    let delta = time.delta_secs();
-    if delta > 0.0 {
-        diagnostics.fps = 1.0 / delta;
-    }
-    if diagnostics.frame_count.is_multiple_of(120) {
-        info!("FPS Diagnostic Overlay: {:.1} fps", diagnostics.fps);
-    }
-}
-
-#[derive(Component)]
-pub struct ReviewUiPanel;
-
-#[derive(Component)]
-pub struct ReviewUiText;
-
-#[cfg(feature = "xr")]
-fn spawn_review_ui_xr(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    spellbook: Res<SpellBook>,
-) {
-    let panel_mat = materials.add(StandardMaterial {
-        base_color: Color::srgba(0.02, 0.08, 0.05, 0.95),
-        emissive: Color::srgba(0.02, 0.15, 0.05, 1.0).to_srgba().into(),
-        metallic: 0.1,
-        perceptual_roughness: 0.9,
-        alpha_mode: AlphaMode::Blend,
-        ..default()
-    });
-
-    let panel = commands.spawn((
-        ReviewUiPanel,
-        Mesh3d(meshes.add(Cuboid::new(3.0, 1.5, 0.05))),
-        MeshMaterial3d(panel_mat),
-        Transform::from_xyz(0.0, 2.0, -1.8),
-    )).id();
-
-    let mut mastered_text = "Mastered Words:\n".to_string();
-    let mut count = 0;
-    for entry in spellbook.entries.iter() {
-        if count < 5 {
-            mastered_text.push_str(&format!("- {}: {:?}\n", entry.word, entry.mastery));
-            count += 1;
-        }
-    }
-    if count == 0 {
-        mastered_text.push_str("(No words registered in SpellBook yet)\n");
-    }
-
-    let text_entity = commands.spawn((
-        ReviewUiText,
-        Text2d::new(format!("VICTORY & REVIEW\n\n{}\nPress ENTER to continue exploration", mastered_text)),
-        TextFont { font_size: 24.0, ..default() },
-        TextColor(Color::WHITE),
-        Transform::from_xyz(0.0, 0.0, 0.03),
-    )).id();
-
-    commands.entity(panel).add_child(text_entity);
-}
-
-fn review_input_system(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut writer: MessageWriter<commands::GameCommand>,
-) {
-    if keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::Space) {
-        writer.write(commands::GameCommand::DismissReview);
-    }
-}
-
-#[cfg(feature = "xr")]
-fn cleanup_review_ui_xr(
-    mut commands: Commands,
-    query: Query<Entity, Or<(With<ReviewUiPanel>, With<ReviewUiText>)>>,
-) {
-    for entity in query.iter() {
-        commands.entity(entity).despawn();
-    }
-}
-
-#[cfg(not(feature = "xr"))]
-fn spawn_review_ui_2d(
-    mut commands: Commands,
-    spellbook: Res<SpellBook>,
-) {
-    let mut mastered_text = "Mastered Words:\n".to_string();
-    let mut count = 0;
-    for entry in spellbook.entries.iter() {
-        if count < 5 {
-            mastered_text.push_str(&format!("- {}: {:?}\n", entry.word, entry.mastery));
-            count += 1;
-        }
-    }
-    if count == 0 {
-        mastered_text.push_str("(No words registered in SpellBook yet)\n");
-    }
-
-    commands.spawn((
-        ReviewUiPanel,
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Percent(20.0),
-            left: Val::Percent(30.0),
-            width: Val::Percent(40.0),
-            height: Val::Percent(60.0),
-            flex_direction: FlexDirection::Column,
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
-            padding: UiRect::all(Val::Px(30.0)),
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.05, 0.15, 0.1, 0.95)),
-    )).with_children(|parent| {
-        parent.spawn((
-            ReviewUiText,
-            Text::new(format!("VICTORY & REVIEW\n\n{}\n\n[Press ENTER to continue]", mastered_text)),
-            TextFont { font_size: 28.0, ..default() },
-            TextColor(Color::WHITE),
-            TextLayout::new_with_justify(Justify::Center),
-        ));
-    });
-}
-
-#[cfg(not(feature = "xr"))]
-fn cleanup_review_ui_2d(
-    mut commands: Commands,
-    query: Query<Entity, With<ReviewUiPanel>>,
-) {
-    for entity in query.iter() {
-        commands.entity(entity).despawn();
-    }
-}
-
-#[cfg(not(feature = "xr"))]
-fn keyboard_quest_interaction(
-    keys: Res<ButtonInput<KeyCode>>,
-    hand: Res<Hand>,
-    session: Option<Res<quest::QuestSession>>,
-    mut writer: MessageWriter<commands::GameCommand>,
-) {
-    if session.is_none() {
-        return;
-    }
-
-    if keys.just_pressed(KeyCode::Enter) {
-        writer.write(commands::GameCommand::CompleteQuest);
-        return;
-    }
-
-    let pressed_idx = [
-        KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3,
-        KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6,
-        KeyCode::Digit7, KeyCode::Digit8, KeyCode::Digit9,
-    ].iter().position(|&k| keys.just_pressed(k));
-
-    if let Some(idx) = pressed_idx {
-        if idx < hand.cards.len() {
-            writer.write(commands::GameCommand::FillQuestSlot(idx));
-        }
-    }
-}
-
-#[cfg(not(feature = "xr"))]
-fn keyboard_battle_interaction(
-    keys: Res<ButtonInput<KeyCode>>,
-    hand: Res<Hand>,
-    session: Option<Res<battle::BattleSession>>,
-    mut writer: MessageWriter<commands::GameCommand>,
-) {
-    if session.is_none() {
-        return;
-    }
-
-    let pressed_idx = [
-        KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3,
-        KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6,
-        KeyCode::Digit7, KeyCode::Digit8, KeyCode::Digit9,
-    ].iter().position(|&k| keys.just_pressed(k));
-
-    if let Some(idx) = pressed_idx {
-        if idx < hand.cards.len() {
-            writer.write(commands::GameCommand::PlayBattleCard(idx));
-        }
-    }
 }

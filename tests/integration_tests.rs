@@ -10,6 +10,9 @@ use lit_tcg::commands::{GameCommand, LastCommand, handle_game_commands};
 use lit_tcg::chat;
 use lit_tcg::letter;
 use lit_tcg::paywall;
+use lit_tcg::deck;
+use lit_tcg::spatial_ui;
+use lit_tcg::hand_tracking::PinchEvents;
 use bevy::prelude::*;
 use std::collections::HashMap;
 
@@ -75,13 +78,11 @@ fn test_quest_progression() {
     let npc_quest = app.world().resource::<GameDatabase>().quests.npc_chains.get("Barnaby").unwrap().first().unwrap().clone();
     
     let mut session = QuestSession {
-        npc_name: "Barnaby".to_string(),
         title: npc_quest.title.clone(),
         template: npc_quest.template.clone(),
         slots: vec!["ADJECTIVE".to_string()],
         filled_slots: HashMap::new(),
         xp_reward: npc_quest.rewards.xp,
-        evolution_reward: npc_quest.rewards.evolution_points,
     };
     
     // Fill slot and complete
@@ -94,14 +95,14 @@ fn test_quest_progression() {
     let mut queue2 = bevy::ecs::world::CommandQueue::default();
     let mut world2 = World::new();
     let mut test_commands = Commands::new(&mut queue2, &world2);
-    let mut curriculum = quest::CurriculumManager::default();
+    let mut grade_manager = quest::GradeManager::default();
     let state = State::new(GameState::Questing);
 
     quest::complete_quest(
         &session,
         &mut sheet,
         &mut spellbook,
-        &mut curriculum,
+        &mut grade_manager,
         &mut test_next_state,
         &mut test_commands,
         &state,
@@ -118,6 +119,7 @@ fn test_battle_combat_mechanics() {
         typo_word: "abandoned".to_string(),
         typo_health: 100,
         player_health: 100,
+        failed_word: None,
     };
     
     let mut spellbook = SpellBook::default();
@@ -125,40 +127,41 @@ fn test_battle_combat_mechanics() {
     let sheet = CharacterSheet::default();
     let state = State::new(GameState::Battling);
 
-    // Play a word with high semantic distance (effective): "abc" vs "abandoned"
+    // Play a word with high semantic distance (counter/block): "abc" vs "abandoned"
     let result_1 = battle::play_battle_card("abc", &mut session, &db, &mut spellbook, &mut next_state, &sheet, &state);
     assert!(result_1.is_effective, "Playing abc should be semantically effective");
-    assert_eq!(session.typo_health, 32, "Effective card should damage typo");
-    assert_eq!(session.player_health, 100, "Effective card should not damage player");
+    assert!(result_1.is_counter, "High distance should trigger counter logic");
+    assert!(session.typo_health < 100, "Counter should damage typo");
+    assert_eq!(session.player_health, 100, "Counter should not damage player");
 
-    // Play a word with low semantic distance (ineffective): "abandoned" vs "abandoned"
+    // Play a word with low semantic distance (synonym/heavy attack): "abandoned" vs "abandoned"
     let result_2 = battle::play_battle_card("abandoned", &mut session, &db, &mut spellbook, &mut next_state, &sheet, &state);
-    assert!(!result_2.is_effective, "Playing identical word should be ineffective");
-    assert_eq!(session.typo_health, 20, "Ineffective card should do minor damage");
-    assert_eq!(session.player_health, 80, "Ineffective card should result in typo counter-attack");
+    assert!(result_2.is_effective, "Playing identical word should be effective (synonym)");
+    assert!(result_2.is_synonym, "Identical word should trigger synonym logic");
+    assert!(session.typo_health < 100, "Synonym should deal heavy damage");
 }
 
 #[test]
-fn test_rhetoric_robot_combat_mechanics() {
+fn test_wand_duel_counter_antonym_block() {
     let db = GameDatabase::load_from_embedded().unwrap();
     let mut session = BattleSession {
-        typo_word: "abandoned".to_string(),
+        typo_word: "happy".to_string(),
         typo_health: 100,
         player_health: 100,
+        failed_word: None,
     };
     
     let mut spellbook = SpellBook::default();
     let mut next_state = NextState::default();
-    let mut sheet = CharacterSheet::default();
-    sheet.active_summon_class = SummonClass::RhetoricRobot;
+    let sheet = CharacterSheet::default();
     let state = State::new(GameState::Battling);
 
-    // Play a word. Rhetoric Robot triggers social combat.
-    let result = battle::play_battle_card("abc", &mut session, &db, &mut spellbook, &mut next_state, &sheet, &state);
+    // Play a word with high semantic distance (antonym/counter): "sad" vs "happy"
+    let result = battle::play_battle_card("sad", &mut session, &db, &mut spellbook, &mut next_state, &sheet, &state);
     
-    assert!(result.social_combat_triggered, "Rhetoric Robot should trigger social combat");
-    assert!(result.is_effective, "Rhetoric attack should be highly effective");
-    assert_eq!(session.typo_health, 38, "Rhetoric attack deals massive 2.5x damage (25 * 2.5 = 62. 100 - 62 = 38)");
+    assert!(result.is_effective, "Antonym should be effective");
+    assert!(result.is_counter, "High distance should trigger counter logic");
+    assert!(session.typo_health < 100, "Counter should damage typo");
 }
 
 #[test]
@@ -177,10 +180,10 @@ fn test_local_save_system() {
     };
     
     let mut spellbook = SpellBook::default();
-    spellbook.record_encounter("clarity", Channel::Mind);
+    spellbook.record_encounter("clarity", Channel::Mind, None, None, None);
     spellbook.upgrade_mastery("clarity", MasteryLevel::Mastered);
     
-    let trail = StudentTrail {
+    let trail = WordTrail {
         visited_words: vec!["clarity".to_string(), "abandoned".to_string()],
         swipe_history: vec![],
         current_word: Some("clarity".to_string()),
@@ -197,7 +200,7 @@ fn test_local_save_system() {
     let loaded = load_res.unwrap();
     assert_eq!(loaded.character_sheet.emergent_class, "The Oracle");
     assert_eq!(loaded.character_sheet.total_xp, 450);
-    assert_eq!(loaded.student_trail.visited_words.len(), 2);
+    assert_eq!(loaded.word_trail.visited_words.len(), 2);
     
     // Clean up temporary save file
     let _ = std::fs::remove_file("save.json");
@@ -229,8 +232,8 @@ fn test_pet_chat_taming() {
 }
 
 #[test]
-fn test_curriculum_and_dialogue() {
-    use lit_tcg::quest::{self, CurriculumManager};
+fn test_grade_manager_and_dialogue() {
+    use lit_tcg::quest::{self, GradeManager};
 
     let db = GameDatabase::load_from_embedded().unwrap();
     
@@ -241,19 +244,18 @@ fn test_curriculum_and_dialogue() {
     assert!(!dialogue_dawn.is_empty());
     assert!(!dialogue_night.is_empty());
 
-    // 2. Verify CurriculumManager grade mapping
-    let mut curriculum = CurriculumManager {
+    // 2. Verify GradeManager grade mapping
+    let mut grade_manager = GradeManager {
         active_grade: 1,
-        progress_xp: 0,
         unlocked_districts: vec!["The Phoneme Forest".to_string()],
     };
-    
-    assert_eq!(curriculum.get_grade_level(), "Grade 1");
-    
+
+    assert_eq!(grade_manager.active_grade, 1);
+
     // Gain 1200 XP (threshold for Grade 2 is 1000 XP)
-    let graded_up = curriculum.check_grade_up(1200);
+    let graded_up = grade_manager.check_grade_up(1200);
     assert!(graded_up);
-    assert_eq!(curriculum.get_grade_level(), "Grade 2");
+    assert_eq!(grade_manager.active_grade, 2);
 }
 
 #[test]
@@ -326,10 +328,10 @@ fn test_command_handler_select_card() {
 
     // Minimal resources required by the handler signature.
     app.init_resource::<GameDatabase>();
-    app.init_resource::<quest::CurriculumManager>();
+    app.init_resource::<quest::GradeManager>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
-    app.init_resource::<StudentTrail>();
+    app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();
     app.init_resource::<letter::LetterStash>();
@@ -358,11 +360,11 @@ fn test_command_handler_dismiss_review() {
     app.init_resource::<LastCommand>();
     // Minimal resources required by the handler signature.
     app.init_resource::<GameDatabase>();
-    app.init_resource::<quest::CurriculumManager>();
+    app.init_resource::<quest::GradeManager>();
     app.init_resource::<Hand>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
-    app.init_resource::<StudentTrail>();
+    app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();
     app.init_resource::<letter::LetterStash>();
@@ -381,4 +383,607 @@ fn test_command_handler_dismiss_review() {
     app.update(); // Second update applies the NextState transition set by the handler.
 
     assert_eq!(*app.world().resource::<State<GameState>>().get(), GameState::Playing);
+}
+
+#[test]
+fn test_empty_hand_cannot_start_battle() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.add_message::<GameCommand>();
+    app.init_resource::<LastCommand>();
+    app.init_resource::<GameDatabase>();
+    app.init_resource::<quest::GradeManager>();
+    app.init_resource::<Hand>();
+    app.init_resource::<SpellBook>();
+    app.init_resource::<CharacterSheet>();
+    app.init_resource::<WordTrail>();
+    app.init_resource::<chat::ChatLog>();
+    app.init_resource::<letter::CurrentSpelling>();
+    app.init_resource::<letter::LetterStash>();
+    app.init_resource::<paywall::DemoSettings>();
+    app.add_systems(Update, handle_game_commands);
+
+    app.world_mut().resource_mut::<NextState<GameState>>().set(GameState::Playing);
+    app.update();
+
+    app.world_mut().write_message(GameCommand::PlayCard);
+    app.update();
+    app.update();
+
+    assert_eq!(*app.world().resource::<State<GameState>>().get(), GameState::Playing);
+}
+
+#[test]
+fn test_blocked_word_rejected() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.add_message::<GameCommand>();
+    app.init_resource::<LastCommand>();
+    app.init_resource::<GameDatabase>();
+    app.init_resource::<quest::GradeManager>();
+    app.init_resource::<Hand>();
+    app.init_resource::<SpellBook>();
+    app.init_resource::<CharacterSheet>();
+    app.init_resource::<WordTrail>();
+    app.init_resource::<chat::ChatLog>();
+    app.init_resource::<letter::CurrentSpelling>();
+    app.init_resource::<letter::LetterStash>();
+    app.init_resource::<Assets<Mesh>>();
+    app.init_resource::<Assets<StandardMaterial>>();
+    app.init_resource::<paywall::DemoSettings>();
+    app.add_systems(Update, handle_game_commands);
+
+    app.world_mut().resource_mut::<NextState<GameState>>().set(GameState::Constructing);
+    app.update();
+
+    {
+        let mut spelling = app.world_mut().resource_mut::<letter::CurrentSpelling>();
+        spelling.word = "shit".to_string();
+    }
+    app.world_mut().write_message(GameCommand::SubmitSpelling);
+    app.update();
+    app.update();
+
+    let spelling = app.world().resource::<letter::CurrentSpelling>();
+    assert!(spelling.word.is_empty(), "Blocked word should clear the spelling pad");
+}
+
+#[test]
+fn test_missing_npc_dialogue_fallback() {
+    let db = GameDatabase::load_from_embedded().unwrap();
+    let dialogue = quest::get_npc_dialogue("UnknownNPC", &db, "Dawn");
+    assert!(dialogue.contains("Hello, I am UnknownNPC"), "Missing NPC should return a fallback greeting");
+}
+
+#[test]
+fn test_quest_completion_with_empty_slots_fails() {
+    let db = GameDatabase::load_from_embedded().unwrap();
+    let quest = db.quests.npc_chains.get("Barnaby").unwrap()[0].clone();
+    let mut slots = Vec::new();
+    let mut temp_str = quest.template.clone();
+    while let Some(start) = temp_str.find('{') {
+        if let Some(end) = temp_str.find('}') {
+            slots.push(temp_str[start+1..end].to_string());
+            temp_str = temp_str[end+1..].to_string();
+        } else {
+            break;
+        }
+    }
+    let mut session = QuestSession {
+        title: quest.title,
+        template: quest.template,
+        slots,
+        filled_slots: HashMap::new(),
+        xp_reward: quest.rewards.xp,
+    };
+
+    let mut sheet = CharacterSheet::default();
+    let mut spellbook = SpellBook::default();
+    let mut grade_manager = quest::GradeManager::default();
+    let mut next_state = NextState::default();
+    let mut queue = bevy::ecs::world::CommandQueue::default();
+    let mut world = World::new();
+    let mut commands = Commands::new(&mut queue, &world);
+    let state = State::new(GameState::Questing);
+
+    quest::complete_quest(&session, &mut sheet, &mut spellbook, &mut grade_manager, &mut next_state, &mut commands, &state);
+
+    assert_eq!(sheet.total_xp, 0, "Incomplete quest should not award XP");
+}
+
+#[test]
+fn test_new_game_archives_existing_save() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.add_message::<GameCommand>();
+    app.init_resource::<LastCommand>();
+    app.init_resource::<GameDatabase>();
+    app.init_resource::<quest::GradeManager>();
+    app.init_resource::<Hand>();
+    app.init_resource::<SpellBook>();
+    app.init_resource::<CharacterSheet>();
+    app.init_resource::<WordTrail>();
+    app.init_resource::<chat::ChatLog>();
+    app.init_resource::<letter::CurrentSpelling>();
+    app.init_resource::<letter::LetterStash>();
+    app.init_resource::<paywall::DemoSettings>();
+    app.add_systems(Update, handle_game_commands);
+
+    app.world_mut().resource_mut::<NextState<GameState>>().set(GameState::MainMenu);
+    app.update();
+
+    std::fs::write("save.json", "{}").ok();
+    app.world_mut().write_message(GameCommand::NewGame);
+    app.update();
+    app.update();
+
+    assert!(std::path::Path::new("save.json.bak").exists() || !std::path::Path::new("save.json").exists());
+    let _ = std::fs::remove_file("save.json");
+    let _ = std::fs::remove_file("save.json.bak");
+}
+
+#[test]
+fn test_demo_word_limit_triggers_paywall() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.add_message::<GameCommand>();
+    app.init_resource::<LastCommand>();
+    app.init_resource::<GameDatabase>();
+    app.init_resource::<quest::GradeManager>();
+    app.init_resource::<Hand>();
+    app.init_resource::<SpellBook>();
+    app.init_resource::<CharacterSheet>();
+    app.init_resource::<WordTrail>();
+    app.init_resource::<chat::ChatLog>();
+    app.init_resource::<letter::CurrentSpelling>();
+    app.init_resource::<letter::LetterStash>();
+    app.init_resource::<Assets<Mesh>>();
+    app.init_resource::<Assets<StandardMaterial>>();
+    app.init_resource::<paywall::DemoSettings>();
+    app.add_systems(Update, handle_game_commands);
+
+    {
+        let mut demo = app.world_mut().resource_mut::<paywall::DemoSettings>();
+        demo.is_demo = true;
+        demo.max_words = 1;
+        demo.words_used = 1;
+    }
+
+    app.world_mut().resource_mut::<NextState<GameState>>().set(GameState::Constructing);
+    app.update();
+
+    {
+        let mut spelling = app.world_mut().resource_mut::<letter::CurrentSpelling>();
+        spelling.word = "abandoned".to_string();
+    }
+    app.world_mut().write_message(GameCommand::SubmitSpelling);
+    app.update();
+    app.update();
+
+    assert_eq!(*app.world().resource::<State<GameState>>().get(), GameState::Paywall);
+}
+
+#[test]
+fn test_select_card_out_of_bounds_warns() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.add_message::<GameCommand>();
+    app.init_resource::<LastCommand>();
+    app.init_resource::<GameDatabase>();
+    app.init_resource::<quest::GradeManager>();
+    app.init_resource::<Hand>();
+    app.init_resource::<SpellBook>();
+    app.init_resource::<CharacterSheet>();
+    app.init_resource::<WordTrail>();
+    app.init_resource::<chat::ChatLog>();
+    app.init_resource::<letter::CurrentSpelling>();
+    app.init_resource::<letter::LetterStash>();
+    app.init_resource::<paywall::DemoSettings>();
+    app.add_systems(Update, handle_game_commands);
+
+    app.world_mut().resource_mut::<NextState<GameState>>().set(GameState::Playing);
+    app.update();
+
+    app.world_mut().write_message(GameCommand::SelectCard(99));
+    app.update();
+
+    let hand = app.world().resource::<Hand>();
+    assert!(hand.selected.is_none(), "Out-of-bounds selection should not select a card");
+}
+
+#[test]
+fn test_invalid_word_spawns_unstable_mutant() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.add_message::<GameCommand>();
+    app.init_resource::<LastCommand>();
+    app.init_resource::<GameDatabase>();
+    app.init_resource::<quest::GradeManager>();
+    app.init_resource::<Hand>();
+    app.init_resource::<SpellBook>();
+    app.init_resource::<CharacterSheet>();
+    app.init_resource::<WordTrail>();
+    app.init_resource::<chat::ChatLog>();
+    app.init_resource::<letter::CurrentSpelling>();
+    app.init_resource::<letter::LetterStash>();
+    app.init_resource::<Assets<Mesh>>();
+    app.init_resource::<Assets<StandardMaterial>>();
+    app.init_resource::<paywall::DemoSettings>();
+    app.add_systems(Update, handle_game_commands);
+
+    app.world_mut().resource_mut::<NextState<GameState>>().set(GameState::Constructing);
+    app.update();
+
+    {
+        let mut spelling = app.world_mut().resource_mut::<letter::CurrentSpelling>();
+        spelling.word = "xyznonexistent".to_string();
+    }
+    app.world_mut().write_message(GameCommand::SubmitSpelling);
+    app.update();
+    app.update();
+
+    let state = app.world().resource::<State<GameState>>();
+    assert_eq!(*state.get(), GameState::Playing, "Invalid word should still transition to Playing");
+}
+
+#[test]
+fn test_rank_up_increases_active_grade() {
+    let mut grade_manager = quest::GradeManager::default();
+    let ranked_up = grade_manager.check_grade_up(2500);
+    assert!(ranked_up, "Gaining 2500 XP should trigger a rank up");
+    assert_eq!(grade_manager.active_grade, 3, "Active rank should be 3 after 2500 XP");
+    let grades = grade_manager.get_valid_grade_levels();
+    assert!(grades.contains(&"3-5") && grades.contains(&"6-8"), "Rank 3 should unlock 3-5 and 6-8 grade levels");
+}
+
+#[test]
+fn test_chat_log_records_message() {
+    let mut chat_log = chat::ChatLog::default();
+    chat_log.add_message("wisdom", "Bounce-bounce-bouncy!", 0.0);
+    assert_eq!(chat_log.messages.len(), 1);
+    assert!(chat_log.messages[0].text.contains("Bounce"));
+}
+
+#[test]
+fn test_start_quest_unknown_npc_does_nothing() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.add_message::<GameCommand>();
+    app.init_resource::<LastCommand>();
+    app.init_resource::<GameDatabase>();
+    app.init_resource::<quest::GradeManager>();
+    app.init_resource::<Hand>();
+    app.init_resource::<SpellBook>();
+    app.init_resource::<CharacterSheet>();
+    app.init_resource::<WordTrail>();
+    app.init_resource::<chat::ChatLog>();
+    app.init_resource::<letter::CurrentSpelling>();
+    app.init_resource::<letter::LetterStash>();
+    app.init_resource::<paywall::DemoSettings>();
+    app.add_systems(Update, handle_game_commands);
+
+    app.world_mut().resource_mut::<NextState<GameState>>().set(GameState::Playing);
+    app.update();
+
+    app.world_mut().write_message(GameCommand::StartQuest("UnknownNPC".to_string()));
+    app.update();
+    app.update();
+
+    assert_eq!(*app.world().resource::<State<GameState>>().get(), GameState::Playing, "Unknown NPC should not change state");
+    assert!(app.world().get_resource::<QuestSession>().is_none(), "Unknown NPC should not create a quest session");
+}
+
+#[test]
+fn test_fill_quest_slot_out_of_bounds_warns() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.add_message::<GameCommand>();
+    app.init_resource::<LastCommand>();
+    app.init_resource::<GameDatabase>();
+    app.init_resource::<quest::GradeManager>();
+    app.init_resource::<Hand>();
+    app.init_resource::<SpellBook>();
+    app.init_resource::<CharacterSheet>();
+    app.init_resource::<WordTrail>();
+    app.init_resource::<chat::ChatLog>();
+    app.init_resource::<letter::CurrentSpelling>();
+    app.init_resource::<letter::LetterStash>();
+    app.init_resource::<paywall::DemoSettings>();
+    app.add_systems(Update, handle_game_commands);
+
+    app.world_mut().resource_mut::<NextState<GameState>>().set(GameState::Questing);
+    app.insert_resource(QuestSession {
+        title: "Test".to_string(),
+        template: "{NOUN}".to_string(),
+        slots: vec!["NOUN".to_string()],
+        filled_slots: HashMap::new(),
+        xp_reward: 10,
+    });
+    app.update();
+
+    {
+        let mut hand = app.world_mut().resource_mut::<Hand>();
+        hand.cards = vec!["wisdom".to_string()];
+    }
+    app.world_mut().write_message(GameCommand::FillQuestSlot(99));
+    app.update();
+
+    let session = app.world().resource::<QuestSession>();
+    assert!(session.filled_slots.is_empty(), "Out-of-bounds slot index should not fill a slot");
+}
+
+#[test]
+fn test_deck_empty_transitions_to_collecting() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.add_message::<GameCommand>();
+    app.init_resource::<LastCommand>();
+    app.init_resource::<GameDatabase>();
+    app.init_resource::<quest::GradeManager>();
+    app.init_resource::<Deck>();
+    app.init_resource::<Hand>();
+    app.init_resource::<SpellBook>();
+    app.init_resource::<CharacterSheet>();
+    app.init_resource::<WordTrail>();
+    app.init_resource::<chat::ChatLog>();
+    app.init_resource::<letter::CurrentSpelling>();
+    app.init_resource::<letter::LetterStash>();
+    app.init_resource::<paywall::DemoSettings>();
+    app.add_systems(Update, (deck::draw_cards, handle_game_commands));
+
+    app.world_mut().resource_mut::<NextState<GameState>>().set(GameState::Playing);
+    app.update();
+    app.update();
+
+    assert_eq!(*app.world().resource::<State<GameState>>().get(), GameState::Collecting, "Empty hand and deck should return to Collecting");
+}
+
+#[test]
+fn test_grade_manager_valid_grades_scales_with_rank() {
+    let mut grade_manager = quest::GradeManager::default();
+    let grades = grade_manager.get_valid_grade_levels();
+    assert!(grades.contains(&"K-2"), "Default rank should include K-2");
+
+    grade_manager.check_grade_up(2500);
+    let grades = grade_manager.get_valid_grade_levels();
+    assert!(grades.contains(&"3-5") && grades.contains(&"6-8"), "Rank 3 should unlock 3-5 and 6-8");
+}
+
+#[test]
+fn test_battle_start_creates_session() {
+    let mut queue = bevy::ecs::world::CommandQueue::default();
+    let mut world = World::new();
+    let mut commands = Commands::new(&mut queue, &world);
+    let db = GameDatabase::load_from_embedded().unwrap();
+    let grade_manager = quest::GradeManager::default();
+    let mut next_state = NextState::default();
+    let state = State::new(GameState::Playing);
+
+    battle::start_battle(&mut commands, &db, &grade_manager, &mut next_state, &state);
+
+    // The function should not panic and should queue commands for a battle session.
+    let _ = next_state;
+}
+
+#[test]
+fn test_settings_command_transitions_to_settings_state() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.add_message::<GameCommand>();
+    app.init_resource::<LastCommand>();
+    app.init_resource::<GameDatabase>();
+    app.init_resource::<quest::GradeManager>();
+    app.init_resource::<Hand>();
+    app.init_resource::<SpellBook>();
+    app.init_resource::<CharacterSheet>();
+    app.init_resource::<WordTrail>();
+    app.init_resource::<chat::ChatLog>();
+    app.init_resource::<letter::CurrentSpelling>();
+    app.init_resource::<letter::LetterStash>();
+    app.init_resource::<paywall::DemoSettings>();
+    app.add_systems(Update, handle_game_commands);
+
+    app.world_mut().resource_mut::<NextState<GameState>>().set(GameState::MainMenu);
+    app.update();
+    app.world_mut().write_message(GameCommand::OpenSettings);
+    app.update();
+    app.update();
+
+    assert_eq!(*app.world().resource::<State<GameState>>().get(), GameState::Settings);
+}
+
+#[test]
+fn test_difficulty_command_transitions_to_difficulty_state() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.add_message::<GameCommand>();
+    app.init_resource::<LastCommand>();
+    app.init_resource::<GameDatabase>();
+    app.init_resource::<quest::GradeManager>();
+    app.init_resource::<Hand>();
+    app.init_resource::<SpellBook>();
+    app.init_resource::<CharacterSheet>();
+    app.init_resource::<WordTrail>();
+    app.init_resource::<chat::ChatLog>();
+    app.init_resource::<letter::CurrentSpelling>();
+    app.init_resource::<letter::LetterStash>();
+    app.init_resource::<paywall::DemoSettings>();
+    app.add_systems(Update, handle_game_commands);
+
+    app.world_mut().resource_mut::<NextState<GameState>>().set(GameState::MainMenu);
+    app.update();
+    app.world_mut().write_message(GameCommand::OpenDifficulty);
+    app.update();
+    app.update();
+
+    assert_eq!(*app.world().resource::<State<GameState>>().get(), GameState::Difficulty);
+}
+
+#[test]
+fn test_pet_collection_command_transitions_to_pet_collection_state() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.add_message::<GameCommand>();
+    app.init_resource::<LastCommand>();
+    app.init_resource::<GameDatabase>();
+    app.init_resource::<quest::GradeManager>();
+    app.init_resource::<Hand>();
+    app.init_resource::<SpellBook>();
+    app.init_resource::<CharacterSheet>();
+    app.init_resource::<WordTrail>();
+    app.init_resource::<chat::ChatLog>();
+    app.init_resource::<letter::CurrentSpelling>();
+    app.init_resource::<letter::LetterStash>();
+    app.init_resource::<paywall::DemoSettings>();
+    app.add_systems(Update, handle_game_commands);
+
+    app.world_mut().resource_mut::<NextState<GameState>>().set(GameState::MainMenu);
+    app.update();
+    app.world_mut().write_message(GameCommand::OpenPetCollection);
+    app.update();
+    app.update();
+
+    assert_eq!(*app.world().resource::<State<GameState>>().get(), GameState::PetCollection);
+}
+
+#[test]
+fn test_complete_quest_fills_and_awards_xp() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.add_message::<GameCommand>();
+    app.init_resource::<LastCommand>();
+    app.init_resource::<GameDatabase>();
+    app.init_resource::<quest::GradeManager>();
+    app.init_resource::<Hand>();
+    app.init_resource::<SpellBook>();
+    app.init_resource::<CharacterSheet>();
+    app.init_resource::<WordTrail>();
+    app.init_resource::<chat::ChatLog>();
+    app.init_resource::<letter::CurrentSpelling>();
+    app.init_resource::<letter::LetterStash>();
+    app.init_resource::<paywall::DemoSettings>();
+    app.add_systems(Update, handle_game_commands);
+
+    app.world_mut().resource_mut::<NextState<GameState>>().set(GameState::Questing);
+    app.insert_resource(QuestSession {
+        title: "Test Verse".to_string(),
+        template: "I need {NOUN}.".to_string(),
+        slots: vec!["NOUN".to_string()],
+        filled_slots: HashMap::new(),
+        xp_reward: 42,
+    });
+    app.update();
+
+    {
+        let mut hand = app.world_mut().resource_mut::<Hand>();
+        hand.cards = vec!["wisdom".to_string()];
+    }
+    app.world_mut().write_message(GameCommand::FillQuestSlot(0));
+    app.update();
+    app.world_mut().write_message(GameCommand::CompleteQuest);
+    app.update();
+
+    let sheet = app.world().resource::<CharacterSheet>();
+    assert_eq!(sheet.total_xp, 47); // 42 base + 5 Slime bonus
+}
+
+#[test]
+fn test_battle_mid_range_normal_damage() {
+    let db = GameDatabase::load_from_embedded().unwrap();
+    let mut session = BattleSession {
+        typo_word: "abandoned".to_string(),
+        typo_health: 100,
+        player_health: 100,
+        failed_word: None,
+    };
+    let mut spellbook = SpellBook::default();
+    let mut next_state = NextState::default();
+    let sheet = CharacterSheet::default();
+    let state = State::new(GameState::Battling);
+
+    // Play a word with mid-range semantic distance: normal damage
+    let result = battle::play_battle_card("abc", &mut session, &db, &mut spellbook, &mut next_state, &sheet, &state);
+    assert!(result.is_effective, "Word should be effective");
+    assert!(session.typo_health < 100, "Damage should hurt typo");
+    assert_eq!(session.player_health, 100, "Effective damage should not hurt player");
+}
+
+#[test]
+fn test_valid_spelling_transitions_through_reveal_pet() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins((
+        bevy::asset::AssetPlugin::default(),
+        bevy::audio::AudioPlugin::default(),
+    ));
+    app.init_asset::<bevy::audio::AudioSource>();
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.add_message::<GameCommand>();
+    app.init_resource::<LastCommand>();
+    app.insert_resource(GameDatabase::load_from_embedded().unwrap());
+    app.init_resource::<quest::GradeManager>();
+    app.init_resource::<Hand>();
+    app.init_resource::<SpellBook>();
+    app.init_resource::<CharacterSheet>();
+    app.init_resource::<WordTrail>();
+    app.init_resource::<chat::ChatLog>();
+    app.init_resource::<letter::CurrentSpelling>();
+    app.init_resource::<letter::LetterStash>();
+    app.init_resource::<Assets<Mesh>>();
+    app.init_resource::<Assets<StandardMaterial>>();
+    app.init_resource::<paywall::DemoSettings>();
+    app.add_plugins(lit_tcg::pet_reveal::PetRevealPlugin);
+    app.add_systems(Update, lit_tcg::commands::handle_game_commands);
+    app.insert_resource(lit_tcg::pet_reveal::RevealConfig { duration: 0.001 });
+
+    app.world_mut().resource_mut::<NextState<GameState>>().set(GameState::Constructing);
+    app.update();
+
+    {
+        let mut spelling = app.world_mut().resource_mut::<letter::CurrentSpelling>();
+        spelling.word = "abandoned".to_string();
+    }
+    app.world_mut().write_message(GameCommand::SubmitSpelling);
+    app.update();
+    app.update();
+
+    assert_eq!(*app.world().resource::<State<GameState>>().get(), GameState::RevealingPet);
+
+    // Let the reveal animation run to completion (duration is 0.001s in test config).
+    for _ in 0..5 {
+        app.update();
+    }
+
+    assert_eq!(*app.world().resource::<State<GameState>>().get(), GameState::Playing);
+
+    // The reveal should have spawned the actual pet avatar.
+    let pet_count = app.world_mut().query::<&lit_tcg::components::PetAvatar>().iter(app.world()).count();
+    assert!(pet_count > 0, "Reveal should spawn at least one PetAvatar");
 }

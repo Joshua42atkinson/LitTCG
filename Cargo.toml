@@ -6,6 +6,9 @@ license = "Proprietary"
 authors = ["Joshua Atkinson"]
 description = "LitTCG — Literary Trading Card Game: spell words to summon pets and battle typos"
 
+[profile.dev]
+opt-level = 1
+
 [lib]
 crate-type = ["lib", "cdylib"]
 name = "lit_tcg"
@@ -54,6 +57,25 @@ desktop = [
     "bevy/picking",
     "bevy_panorbit_camera",
 ]
+wasm = [
+    "bevy/bevy_winit",
+    "bevy/bevy_pbr",
+    "bevy/bevy_core_pipeline",
+    "bevy/bevy_post_process",
+    "bevy/bevy_window",
+    "bevy/bevy_text",
+    "bevy/bevy_ui",
+    "bevy/bevy_scene",
+    "bevy/bevy_log",
+    "bevy/bevy_state",
+    "bevy/bevy_sprite",
+    "bevy/bevy_gltf",
+    "bevy/bevy_audio",
+    "bevy/multi_threaded",
+    "bevy/default_font",
+    "bevy/tonemapping_luts",
+    "bevy/picking",
+]
 xr = [
     "bevy/bevy_render",
     "bevy/bevy_pbr",
@@ -77,13 +99,16 @@ xr = [
 ]
 tts = ["dep:reqwest"]
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["Window", "Location"] }
+
 [dependencies]
 # Bevy ECS + rendering (minimal — features enabled via feature flags)
 bevy = { version = "0.18.1", default-features = false, features = [
     "bevy_state", "bevy_pbr", "bevy_sprite", "bevy_render", "bevy_core_pipeline",
     "bevy_post_process", "bevy_audio",
     "bevy_asset", "bevy_scene", "bevy_text", "bevy_window", "bevy_mesh",
-    "bevy_ui", "bevy_log", "png", "webgl2", "zstd_rust",
+    "bevy_ui", "bevy_log", "png", "webgl2", "zstd_rust", "debug",
 ] }
 bevy_reflect = "0.18.1"
 log = "0.4"
@@ -141,3 +166,8 @@ permissions = [
 [package.metadata.android.signing.release]
 path = "/home/joshua/.android/debug.keystore"
 keystore_password = "android"
+
+[patch.crates-io]
+# Patch jni 0.22.4 to avoid a startup panic on Android where the JNI exception
+# clears between exception_check() and exception_occurred().
+jni = { path = "../crates/jni-0.22.4-android-fix" }

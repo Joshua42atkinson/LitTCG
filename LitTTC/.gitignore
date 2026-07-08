@@ -1,6 +1,5 @@
 # Rust build artifacts
 /target
-**/target/
 
 # Cargo lock is included for binary crates; remove if this becomes a library
 # Cargo.lock
@@ -29,7 +28,3 @@ tmp/
 
 # Generated dependency fingerprints in debug builds
 **/.fingerprint/
-
-# Python cache
-__pycache__/
-*.pyc

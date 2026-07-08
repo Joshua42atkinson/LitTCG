@@ -1,0 +1,61 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# FACES PROTOCOL — faces-protocol crate
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# CRATE:       faces-protocol
+# PURPOSE:     Fact Align Computational Emotive System (FACES) Protocol
+#              — 4-byte emotive signaling for human-machine interfaces
+#
+# DESCRIPTION:
+#   FACES compresses complex psychological states into a high-density 4-byte
+#   payload (32 bits), enabling real-time emotive feedback that is both
+#   machine-readable and human-intuitive. The protocol maps semantic intent
+#   to structural ASCII geometry, leveraging cognitive pareidolia to bypass
+#   the Uncanny Valley entirely.
+#
+# PROTOCOL STRUCTURE (4 bytes, 32 bits):
+#   Byte 0 — Aura    (8-bit):  256 ANSI color indices (mood/atmosphere)
+#   Byte 1 — Container (5-val): Head shape boundary (cognitive boundary)
+#   Byte 2 — Focus   (6-val): Eye/attention state (cognitive load)
+#   Byte 3 — Action  (5-val): Mouth/expression state (communicative intent)
+#
+#   Total unique states: 256 × 5 × 6 × 5 = 38,400
+#
+# THEORETICAL FOUNDATIONS:
+#   - Mehrabian's 7-38-55 Rule: FACES proxies the 93% nonverbal channel
+#   - Paul Ekman's FACS: Action Units mapped to Focus and Action bytes
+#   - Mian Xiang (面相): Five Elements mapped to Container shapes
+#   - Brené Brown: Vulnerability ↔ openness geometry
+#   - Alan Watts: Fluidity ↔ cognitive rigidity spectrum
+#
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[package]
+name = "faces-protocol"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Joshua Atkinson"]
+description = "FACES Protocol — 4-byte emotive signaling for human-machine interfaces"
+
+[dependencies]
+# Zero external dependencies by default.
+# The FACES protocol is a close-to-metal, zero-allocation system.
+# Serialization uses only std and manual formatting.
+# This ensures compatibility with NPU-bound embedded targets
+# and aligns with the "No Python Snakes" Rust constitution.
+serde = { version = "1", optional = true, features = ["derive"] }
+
+[dev-dependencies]
+# No test dependencies either — all tests use std only.
+
+[features]
+default = []
+# Enable serde Serialize/Deserialize for FacesState, Aura, and enums.
+# Allows persistence in CharacterSheet and network serialization.
+# When enabled, faces-protocol depends on serde — not zero-dep anymore.
+serde = ["dep:serde"]
+# Future: "npu" feature will enable ONNX Runtime bindings for FACES-Embed
+# Future: "xr" feature will enable Bevy integration for spatial rendering
+# Eval harness — JSONL loader, metrics, latency benchmarks
+eval = []

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AndroidManifest.phone.xml — Non-XR phone/tablet variant for LitTCG -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.littcg.game"
+    android:versionCode="1"
+    android:versionName="0.1.0">
+
+    <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="36" />
+
+    <!-- Permissions -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- No XR features required; runs on any Android 11+ device -->
+
+    <application
+        android:debuggable="false"
+        android:hasCode="false"
+        android:label="LitTCG"
+        android:icon="@mipmap/ic_launcher">
+
+        <activity
+            android:name="android.app.NativeActivity"
+            android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize"
+            android:exported="true">
+
+            <meta-data android:name="android.app.lib_name" android:value="lit_tcg" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

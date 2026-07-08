@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Word Slimes</title>
+    <link data-trunk rel="rust" data-bin="lit-tcg-desktop" data-cargo-features="desktop" data-wasm-opt="2" data-wasm-opt-params="--enable-bulk-memory --enable-nontrapping-float-to-int --enable-mutable-globals --enable-sign-ext" />
+    <link data-trunk rel="copy-dir" href="assets" />
+    <style>
+      body {
+        margin: 0;
+        background-color: #1a1a24;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        overflow: hidden;
+      }
+      canvas {
+        width: 100%;
+        height: 100%;
+        outline: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="daydream-canvas"></canvas>
+  </body>
+</html>

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LitTCG — Spell Words. Summon Pets. Battle Typos.</title>
+  <style>
+    :root {
+      --bg: #08080f;
+      --panel: #11111a;
+      --text: #f4f4f8;
+      --muted: #9a9aad;
+      --accent: #7c5cff;
+      --accent-2: #ff7a45;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      line-height: 1.6;
+    }
+    header, section, footer {
+      padding: 4rem 1.5rem;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    header { text-align: center; padding-top: 6rem; }
+    h1 { font-size: 3.5rem; margin: 0 0 1rem; }
+    .tagline { font-size: 1.4rem; color: var(--muted); margin-bottom: 2rem; }
+    .cta {
+      display: inline-block;
+      padding: 1rem 2rem;
+      background: linear-gradient(135deg, var(--accent), #9b7dff);
+      color: white;
+      text-decoration: none;
+      border-radius: 10px;
+      font-weight: 600;
+      margin: 0.5rem;
+    }
+    .cta.secondary {
+      background: transparent;
+      border: 2px solid var(--accent);
+      color: var(--text);
+    }
+    .hero-img {
+      background: var(--panel);
+      border-radius: 20px;
+      height: 320px;
+      margin: 3rem auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      border: 1px solid #222;
+    }
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 2rem;
+    }
+    .feature {
+      background: var(--panel);
+      border-radius: 16px;
+      padding: 2rem;
+    }
+    .feature h3 { margin-top: 0; color: var(--accent); }
+    footer { text-align: center; color: var(--muted); border-top: 1px solid #222; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>LitTCG</h1>
+    <p class="tagline">A literary trading card game where kids spell words to summon pets and battle typos.</p>
+    <a class="cta" href="#play">Play the Demo</a>
+    <a class="cta secondary" href="https://polar.sh/your-product">Get the Full Game</a>
+    <div class="hero-img">[ Hero GIF / Screenshot of pet reveal goes here ]</div>
+  </header>
+
+  <section>
+    <div class="features">
+      <div class="feature">
+        <h3>Spell to Summon</h3>
+        <p>Kids collect letters and spell real vocabulary words to summon magical pets.</p>
+      </div>
+      <div class="feature">
+        <h3>Elemental Pets</h3>
+        <p>Fire, Water, Earth, Air, Shadow, Light, and Neutral — each with unique stats and personalities.</p>
+      </div>
+      <div class="feature">
+        <h3>Battle Typos</h3>
+        <p>Use synonyms and antonyms in turn-based combat against grammar glitches.</p>
+      </div>
+      <div class="feature">
+        <h3>Parent Reports</h3>
+        <p>Upload save.json to see words learned, favorite elements, rank, and conversation prompts.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>&copy; 2026 LitTCG. Built with Bevy, Rust, and a love of words.</p>
+  </footer>
+</body>
+</html>

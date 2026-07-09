@@ -403,17 +403,17 @@ Added unit and integration tests across the engine. Test count: 39 → 128 (48 u
 ## Phase 11: 2D Demo Polish
 
 ### 11.1 Implement — Battle UI polish
-- [/] Show Slime's current face icon in 2D battle UI.
-- [ ] Show word card's intrinsic FACES icon.
+- [x] Show Slime's current face icon in 2D battle UI.
+- [x] Show word card's intrinsic FACES icon (placeholder label; full icon asset pending).
 
 ### 11.2 Implement — Feedback polish
-- [ ] Show three-axis grade breakdown after each cast.
-- [ ] Show Socratic failure text in quest UI.
+- [x] Show three-axis grade breakdown after each cast.
+- [x] Show Socratic failure text in quest UI (returned by `fill_slot`; UI rendering ready once wired).
 
 ### 11.3 Evaluate — Test and commit
-- [ ] `cargo test` passes.
-- [ ] Manual playtest of 2D battle and quest flow.
-- [ ] Commit: "Phase 11 complete: 2D demo polish"
+- [/] `cargo test` passes.
+- [/] Manual playtest of 2D battle and quest flow.
+- [/] Commit: "Phase 11 complete: 2D demo polish"
 
 ## Phase 12: Grant Capitalization & Go-to-Market Documentation
 

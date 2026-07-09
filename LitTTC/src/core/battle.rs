@@ -1251,6 +1251,7 @@ impl Plugin for BattlePlugin {
                apply_damage_to_dummy,
                enemy_turn_ai,
                check_battle_end_conditions,
+               update_graybox_feedback_ui,
                debug_trigger_graybox_battle,
            ).run_if(in_state(GameState::Battling)));
     }
@@ -1624,6 +1625,14 @@ fn cleanup_battle_ui_2d(
 
 // ─── PHASE 1: 2D GRAY-BOX COMBAT SYSTEMS ───────────────────────────
 
+#[derive(Component)]
+struct GrayBoxFeedbackText;
+
+#[derive(Resource, Default)]
+struct GrayBoxFeedback {
+    last_cast_summary: Option<String>,
+}
+
 /// Spawn the 2D gray-box battle UI for Phase 1
 pub fn spawn_battle_ui_2d_graybox(
     mut commands: Commands,
@@ -1790,6 +1799,12 @@ pub fn spawn_battle_ui_2d_graybox(
             TextFont { font_size: 18.0, ..default() },
             TextColor(Color::srgb(1.0, 0.84, 0.0)),
         ));
+        parent.spawn((
+            Text::new("Slime Face: Calm\nCast a spell to see grade breakdown."),
+            TextFont { font_size: 14.0, ..default() },
+            TextColor(Color::WHITE),
+            GrayBoxFeedbackText,
+        ));
     });
 }
 
@@ -1809,6 +1824,7 @@ pub fn start_graybox_battle(
     });
 
     commands.insert_resource(ActiveFace::default());
+    commands.insert_resource(GrayBoxFeedback::default());
 
     spawn_battle_ui_2d_graybox(commands, micro_deck);
 
@@ -1863,6 +1879,7 @@ pub fn handle_cast_spell_click(
     altar_query: Query<&AltarDropZone>,
     active_face: Res<ActiveFace>,
     mut battle_session: ResMut<GrayBoxBattleSession>,
+    mut feedback: ResMut<GrayBoxFeedback>,
 ) {
     for interaction in interaction_query.iter_mut() {
         if *interaction == Interaction::Pressed {
@@ -1874,6 +1891,29 @@ pub fn handle_cast_spell_click(
                         active_face.faces,
                     );
                     battle_session.dummy_hp -= damage;
+
+                    // Simple three-axis grade estimate for the gray-box demo.
+                    let semantics = if is_synonym(word, &battle_session.prompt_word) {
+                        1.0
+                    } else if is_antonym(word, &battle_session.prompt_word) {
+                        0.9
+                    } else {
+                        0.5
+                    };
+                    let face = nearest_slime_face_preset(active_face.faces);
+                    let face_modifier = match face {
+                        SlimeFace::Fierce => 1.2,
+                        SlimeFace::Joyful => 1.1,
+                        SlimeFace::Calm => 1.0,
+                        SlimeFace::Angry => 1.3,
+                    };
+                    let pragmatics = ((face_modifier - 0.7f32) / 0.8f32).clamp(0.0f32, 1.0f32);
+                    let syntax = 0.7f32;
+
+                    feedback.last_cast_summary = Some(format!(
+                        "Cast: {}\nSlime Face: {:?}\nDamage: {}\nMath: {}\nGrades — Syntax: {:.2}, Semantics: {:.2}, Pragmatics: {:.2}",
+                        word, face, damage, math, syntax, semantics, pragmatics
+                    ));
                     info!("Spell cast: {} with faces {} - Damage: {} ({})", word, active_face.faces, damage, math);
                 }
             }
@@ -2020,6 +2060,20 @@ pub fn apply_damage_to_dummy(
 ) {
     // Damage is now applied directly in handle_cast_spell_click
     // This function is kept for future event-based integration
+}
+
+/// Update the 2D gray-box combat log with the current Slime face and latest cast feedback.
+#[cfg(feature = "flat2d")]
+fn update_graybox_feedback_ui(
+    active_face: Res<ActiveFace>,
+    feedback: Res<GrayBoxFeedback>,
+    mut text_query: Query<&mut Text, With<GrayBoxFeedbackText>>,
+) {
+    let face = nearest_slime_face_preset(active_face.faces);
+    let summary = feedback.last_cast_summary.as_deref().unwrap_or("Cast a spell to see grade breakdown.");
+    for mut text in &mut text_query {
+        text.0 = format!("Slime Face: {:?}\n{}", face, summary);
+    }
 }
 
 /// Enemy turn AI (dummy attacks with random word)

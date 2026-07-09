@@ -411,9 +411,9 @@ Added unit and integration tests across the engine. Test count: 39 → 128 (48 u
 - [x] Show Socratic failure text in quest UI (returned by `fill_slot`; UI rendering ready once wired).
 
 ### 11.3 Evaluate — Test and commit
-- [/] `cargo test` passes.
-- [/] Manual playtest of 2D battle and quest flow.
-- [/] Commit: "Phase 11 complete: 2D demo polish"
+- [x] `cargo test` passes.
+- [x] Manual playtest of 2D battle and quest flow.
+- [x] Commit: "Phase 11 complete: 2D demo polish"
 
 ## Phase 12: Grant Capitalization & Go-to-Market Documentation
 
@@ -432,13 +432,13 @@ Added unit and integration tests across the engine. Test count: 39 → 128 (48 u
 - [x] Draft SBIR Phase I specific aims page (no submission; internal doc).
 
 ### 12.4 Evaluate — Review and commit
-- [/] Peer/self-review docs for consistency.
-- [/] Commit: "Phase 12 complete: grant capitalization documentation"
+- [x] Peer/self-review docs for consistency.
+- [x] Commit: "Phase 12 complete: grant capitalization documentation"
 
 ---
 
 ## Diapers Loop Exit Criteria
 
-- [ ] Phases 8, 9, 10, 11, and 12 are fully checked off.
-- [ ] Final `cargo test` passes.
-- [ ] `walkthrough.md` updated with a summary of all completed phases.
+- [x] Phases 8, 9, 10, 11, and 12 are fully checked off.
+- [x] Final `cargo test` passes.
+- [x] `walkthrough.md` updated with a summary of all completed phases.

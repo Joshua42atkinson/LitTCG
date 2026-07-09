@@ -2,9 +2,41 @@
 
 ## What Was Completed
 
-This document summarizes the Phase 3 Demo Sprint work done in the latest session.
+This document summarizes recent work across the diapers loop for Phases 8–12.
 
-### Core Gameplay
+### Phases 8–12: Stealth Assessment, CCSS Mapping, and Grant Documentation
+
+- **Phase 8 — Stealth Assessment Telemetry**
+  - Added `CastTelemetry`, `LexicalDiversitySnapshot`, and `TelemetrySeries` to `components.rs`.
+  - Extended `VaamMetrics` with rolling token window, HD-D (hypergeometric distribution D), MTLD, and syntactic-complexity ratio.
+  - Wired telemetry recording into `play_battle_card()`, `cast_sentence()`, and `complete_quest()`.
+  - All metrics are unit-tested with property-based assertions.
+
+- **Phase 9 — CCSS ELA Metadata & Standard Mapping**
+  - Added CCSS standard-code constants (`L.9-10.3`, `L.9-10.4`, `L.9-10.5`, `L.11-12.3`) in `components::ccss`.
+  - Added `ccss_tags` field to etymology `RootData` and `SuffixData` with serde default.
+  - Tagged 14 representative roots in `assets/etymology_db.json`.
+  - Added `GameDatabase::word_ccss_tags()` helper and `VaamMetrics::ccss_coverage` tracker.
+  - Battle, sentence, and quest telemetry now increment coverage counts.
+
+- **Phase 10 — Institutional Telemetry Serialization**
+  - Persisted `VaamMetrics` inside `SaveData` alongside `CharacterSheet`, `SpellBook`, and `WordTrail`.
+  - Updated `save.rs` roundtrip test.
+  - Expanded `dashboard/index.html` to render:
+    - CCSS coverage heatmap,
+    - HD-D / MTLD / syntactic-complexity sparkline trends,
+    - IEP-friendly raw-numbers table.
+
+- **Phase 11 — 2D Demo Polish**
+  - Added `GrayBoxFeedback` resource and `GrayBoxFeedbackText` marker.
+  - Gray-box combat log now shows current Slime face and a three-axis grade breakdown after each cast.
+
+- **Phase 12 — Grant Capitalization & Go-to-Market Documentation**
+  - Created `docs/MTI_BRIEF.md` (MTI BIF $30k ask, match plan, milestones).
+  - Created `docs/SBIR_PHASE1.md` (specific aims, research design, validation plan).
+  - Updated `docs/GRANT_STRATEGY.md` checklist and references.
+
+### Earlier Work — Phase 3 Demo Sprint
 
 - **P3.2 Pet Card Reveal Animation**
   - Face-down card spawns after spelling a valid word.
@@ -73,8 +105,9 @@ Run these commands to confirm the current state:
 
 ```bash
 cd /home/joshua/LitTCG/LitTTC
-cargo clippy --features desktop   # 0 warnings
-cargo test                         # 81 tests passing
+cargo test --lib                   # 67 unit tests passing
+cargo test --test integration_tests # 34 integration tests passing
+cargo check --features desktop     # clean (1 pre-existing range-endpoint warning)
 cargo check --features flat2d      # clean
 cargo check --features xr          # clean
 trunk build                        # WASM build succeeds

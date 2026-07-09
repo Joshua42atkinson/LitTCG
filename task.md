@@ -396,14 +396,14 @@ Added unit and integration tests across the engine. Test count: 39 → 128 (48 u
 - [x] Render IEP-friendly raw numbers table.
 
 ### 10.4 Evaluate — Test and commit
-- [/] `cargo test` passes.
-- [/] Manual check: dashboard loads a sample `save.json` without errors.
-- [/] Commit: "Phase 10 complete: institutional serialization and dashboard reports"
+- [x] `cargo test` passes.
+- [x] Manual check: dashboard loads a sample `save.json` without errors.
+- [x] Commit: "Phase 10 complete: institutional serialization and dashboard reports"
 
 ## Phase 11: 2D Demo Polish
 
 ### 11.1 Implement — Battle UI polish
-- [ ] Show Slime's current face icon in 2D battle UI.
+- [/] Show Slime's current face icon in 2D battle UI.
 - [ ] Show word card's intrinsic FACES icon.
 
 ### 11.2 Implement — Feedback polish
@@ -418,22 +418,22 @@ Added unit and integration tests across the engine. Test count: 39 → 128 (48 u
 ## Phase 12: Grant Capitalization & Go-to-Market Documentation
 
 ### 12.1 Analysis — Compile technical innovation narrative
-- [ ] Extract HD-D/MTLD technical proof into a one-page MTI innovation brief.
-- [ ] Extract ECD framework summary for SBIR specific aims.
+- [x] Extract HD-D/MTLD technical proof into a one-page MTI innovation brief.
+- [x] Extract ECD framework summary for SBIR specific aims.
 
 ### 12.2 Design — Funding sequence
-- [ ] Finalize MTI BIF ask amount and match-fund plan.
-- [ ] Map application timeline against Phase 8–11 completion dates.
+- [x] Finalize MTI BIF ask amount and match-fund plan.
+- [x] Map application timeline against Phase 8–11 completion dates.
 
 ### 12.3 Implement — Documentation
-- [ ] Ensure `docs/GRANT_STRATEGY.md` is current with all cited funding vehicles.
-- [ ] Update `GDD.md` Commercialization and `MARKETING_PLAN.md` as needed.
-- [ ] Draft MTI BIF application outline (no submission; internal doc).
-- [ ] Draft SBIR Phase I specific aims page (no submission; internal doc).
+- [x] Ensure `docs/GRANT_STRATEGY.md` is current with all cited funding vehicles.
+- [x] Update `GDD.md` Commercialization and `MARKETING_PLAN.md` as needed.
+- [x] Draft MTI BIF application outline (no submission; internal doc).
+- [x] Draft SBIR Phase I specific aims page (no submission; internal doc).
 
 ### 12.4 Evaluate — Review and commit
-- [ ] Peer/self-review docs for consistency.
-- [ ] Commit: "Phase 12 complete: grant capitalization documentation"
+- [/] Peer/self-review docs for consistency.
+- [/] Commit: "Phase 12 complete: grant capitalization documentation"
 
 ---
 

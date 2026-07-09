@@ -154,8 +154,8 @@ MTI offers free **Technical Assistance Program (TAP)** support for SBIR/STTR app
 
 ## 8. Key Documents to Produce
 
-- [ ] MTI BIF application outline (technical + financial)
-- [ ] SBIR Phase I proposal draft (specific aims, research design, commercialization plan)
+- [x] MTI BIF application outline (technical + financial) → `docs/MTI_BRIEF.md`
+- [x] SBIR Phase I proposal draft (specific aims, research design, commercialization plan) → `docs/SBIR_PHASE1.md`
 - [ ] Institutional one-pager for district administrators (FERPA/COPPA, CCSS alignment, IEP outputs)
 - [ ] Fiscal-sponsor solicitation letter template
 - [ ] Pilot agreement template for Maine schools / tutoring centers

@@ -97,6 +97,7 @@ impl Plugin for HudPlugin {
                    update_active_pet_ui,
                    update_badge_ui,
                    toggle_action_menu_visibility,
+                   update_battle_action_button_label,
                ));
         }
         #[cfg(not(feature = "flat2d"))]
@@ -489,6 +490,7 @@ fn update_spelling_ui(
 fn update_hand_ui(
     mut commands: Commands,
     hand: Res<crate::components::Hand>,
+    db: Res<crate::database::GameDatabase>,
     root_query: Query<Entity, With<HandUiRoot>>,
     card_query: Query<Entity, With<HandCardUi>>,
     _asset_server: Res<AssetServer>,
@@ -503,6 +505,13 @@ fn update_hand_ui(
                 for (i, word) in hand.cards.iter().enumerate() {
                     let is_selected = hand.selected == Some(i);
                     let border_color = if is_selected { Color::srgb(1.0, 0.84, 0.0) } else { Color::srgba(0.0, 0.0, 0.0, 0.0) };
+                    let lower_word = word.to_lowercase();
+                    let stats = db.words.get(&lower_word);
+                    let pos = stats.map(|s| s.part_of_speech.clone()).filter(|s| !s.is_empty()).unwrap_or_else(|| "?".to_string());
+                    let syn_hint = db.synonyms.get(&lower_word)
+                        .and_then(|e| e.synonyms.first())
+                        .map(|s| format!("like: {}", s))
+                        .unwrap_or_else(|| "no hint".to_string());
                     parent.spawn((
                         Button,
                         HandCardUi(i),
@@ -523,8 +532,8 @@ fn update_hand_ui(
                         BackgroundColor(Color::srgb(0.15, 0.15, 0.25)),
                     )).with_children(|card| {
                         card.spawn((
-                            Text::new(format!("[{}]\n\n{}", i + 1, word)),
-                            TextFont { font_size: 20.0, ..default() },
+                            Text::new(format!("[{}] {}\n{}\n{}", i + 1, pos.to_uppercase(), word, syn_hint)),
+                            TextFont { font_size: 18.0, ..default() },
                             TextColor(Color::WHITE),
                             TextLayout::new_with_justify(Justify::Center),
                         ));
@@ -635,6 +644,7 @@ fn update_active_pet_ui(
     }
 }
 
+#[cfg(feature = "flat2d")]
 fn assets_lore(_word: &str) -> String {
     // GeneratedAssets is loaded, but as a resource we can't easily get here without
     // importing it. For flat2d we just return an empty string for now.
@@ -954,6 +964,22 @@ pub fn handle_constructing_buttons(
     for interaction in &mut backspace_query {
         if *interaction == Interaction::Pressed {
             writer.write(GameCommand::Backspace);
+        }
+    }
+}
+
+#[cfg(feature = "flat2d")]
+fn update_battle_action_button_label(
+    state: Res<State<GameState>>,
+    buttons: Query<&Children, With<PlayCardButton>>,
+    mut text_query: Query<&mut Text>,
+) {
+    let label = if *state.get() == GameState::Battling { "Cast Spell" } else { "Play Card" };
+    for children in &buttons {
+        for child in children.iter() {
+            if let Ok(mut text) = text_query.get_mut(child) {
+                text.0 = label.to_string();
+            }
         }
     }
 }

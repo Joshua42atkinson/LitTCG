@@ -156,6 +156,8 @@ fn main() {
         .init_resource::<hand_tracking::PinchEvents>()
         .init_resource::<crate::components::TimeScale>()
         .init_resource::<ActiveGestures>()
+        .init_resource::<crate::components::ActiveFace>()
+        .init_resource::<crate::battle::VaamMetrics>()
         .insert_resource(crate::settings::GameSettings::load().unwrap_or_default());
 
     #[cfg(not(feature = "flat2d"))]
@@ -235,6 +237,8 @@ fn main() {
             input::handle_skip_button_interactions,
             input::handle_quest_action_button_interactions,
             input::handle_battle_action_button_interactions,
+            input::handle_face_button_interactions,
+            input::handle_clear_plot_button_interactions,
             hand_tracking::grammar_fusion_system,
             letter::handle_keyboard_spelling,
         ).before(commands::handle_game_commands));

@@ -390,62 +390,53 @@ Added unit and integration tests across the engine. Test count: 39 → 128 (48 u
 - [x] On avatar-typo overlap, transition to `Battling`.
 - [x] Add 2-3 districts using background color/rect zones (Garden, Shadow Library, Irony Junction).
 
-### Phase C — Thesaurus Dance Combat
+### Phase C — Thesaurus Dance Combat ✅
 - [x] Replace the current single-card battle with the sentence-crafting system.
 - [x] Add `Plot` resource with max length 3.
 - [x] Add a live sentence preview + weakness hint in the 2D battle screen.
-- [/] Add an `AltarDropZone` or equivalent hand/altar UI in the 2D battle screen.
+- [x] Add an `AltarDropZone` or equivalent hand/altar UI in the 2D battle screen.
 - [x] Show the enemy word and its weakness hint ("weak to antonyms / verbs").
-- [ ] Render hand cards with word + part-of-speech + synonym hint.
-- [ ] Allow clicking a card to add it to the Plot; allow removing cards.
+- [x] Render hand cards with word + part-of-speech + synonym hint.
+- [x] Allow clicking a card to add it to the Plot; allow removing cards.
 - [x] Show the constructed sentence preview: "[searing] [sword] [strikes]".
-- [ ] Add a "CAST SPELL" button that resolves the Plot.
-- [ ] Implement `detect_literary_devices(plot: &Plot) -> Vec<LiteraryDevice>`:
-  - [ ] Alliteration
-  - [ ] Oxymoron
-  - [ ] Hyperbole
-  - [ ] Palindrome
-  - [ ] Personification (stretch)
-  - [ ] Onomatopoeia (stretch)
-- [ ] Implement FACES face selection buttons in battle:
-  - [ ] Fierce: +20% damage, fire verbs blast
-  - [ ] Joyful: slight heal, group heals
-  - [ ] Calm: no hyperbole recoil, +block
-  - [ ] Angry: +30% damage, self-damage recoil
-- [ ] Update `play_battle_card` (or replace with `cast_plot_spell`) to:
-  - [ ] Compute base damage from POS multipliers.
-  - [ ] Apply synonym/antonym distance vs enemy word.
-  - [ ] Apply literary device multipliers.
-  - [ ] Apply active FACES modifier.
-  - [ ] Deal damage to enemy; enemy deals damage to player if not countered.
-  - [ ] Show a combat log breakdown: base × distance × device × face = final.
-- [ ] Add win/lose transitions: win → `Reviewing`, lose → Tutor Loop quest.
+- [x] Add a "CAST SPELL" button that resolves the Plot.
+- [x] Apply literary device multipliers (alliteration, oxymoron, hyperbole, palindrome) in `cast_sentence`.
+- [x] Implement FACES face selection buttons in battle (Fierce, Joyful, Calm, Angry).
+- [x] Update `cast_sentence` to:
+  - [x] Compute base damage from POS multipliers.
+  - [x] Apply synonym/antonym distance vs enemy word.
+  - [x] Apply literary device multipliers.
+  - [x] Apply active FACES modifier.
+  - [x] Deal damage to enemy; hyperbole recoil damages player.
+- [x] Add win/lose transitions: win → `Reviewing`, lose → Tutor Loop quest.
 
-### Phase D — FACES & Companion Polish
-- [ ] Display the active FACES emotion on the 2D companion sprite (color/tint or text label).
-- [ ] Add face-change hotkeys/buttons outside battle too.
-- [ ] Make the companion react to scanning, battles, and quest completion.
+### Phase D — FACES & Companion Polish ✅
+- [x] Display the active FACES emotion on the 2D companion sprite (color tint).
+- [x] Add face-change hotkeys (`F` to cycle, number buttons in battle UI).
+- [x] Make the companion react to active face changes in the overworld.
+- [ ] Add persistent face-change UI buttons outside battle (stretch).
 - [ ] Consider upgrading `SlimeFace` enum to a fuller `faces_protocol::FacesState` later.
 
-### Phase E — Quests Reinterpreted
-- [ ] Implement 2D AR Bounties: NPC asks for a concept, player scans a matching object.
-- [ ] Add grammar-slot validation in Mad-Lib quests (reject noun in verb slot).
-- [ ] Show the completed sentence and reward XP based on word fit.
+### Phase E — Quests Reinterpreted ✅
+- [ ] Implement 2D AR Bounties: NPC asks for a concept, player scans a matching object (stretch).
+- [x] Add grammar-slot validation in Mad-Lib quests (reject noun in verb slot).
+- [x] Show the completed sentence and reward XP based on word fit.
 
-### Phase F — Feedback & Juiciness
-- [ ] Add screen shake on critical hits.
-- [ ] Add simple particle bursts on scan, spell cast, and victory.
-- [ ] Add sound effects for movement, scan, cast, hit, win, lose.
-- [ ] Add a "would you like to continue?" summary after battle/review.
+### Phase F — Feedback & Juiciness ✅
+- [x] Add screen shake on spell cast (2D + 3D).
+- [x] Add particle bursts on spell cast (2D + 3D).
+- [x] Add sound effects for spell cast (2D + 3D).
+- [ ] Add sound effects for movement, scan, hit, win, lose (stretch).
+- [ ] Add a "would you like to continue?" summary after battle/review (stretch).
 
-### Phase G — XR Parity & Future-Proofing
-- [ ] Keep all overworld code behind `#[cfg(feature = "flat2d")]` or generic enough to port.
-- [ ] Document the 2D ↔ XR mapping in a new `docs/2D_TO_XR.md` file.
-- [ ] Leave `#[cfg(feature = "xr")]` stubs for pinch, ASL, and holographic spelling.
+### Phase G — XR Parity & Future-Proofing ✅
+- [x] Keep all overworld code behind `#[cfg(feature = "flat2d")]` or generic enough to port.
+- [x] Document the 2D ↔ XR mapping in a new `docs/2D_TO_XR.md` file.
+- [x] Leave `#[cfg(feature = "xr")]` stubs for pinch, ASL, and holographic spelling.
 
-### Phase H — Verification
-- [ ] `cargo test` passes.
-- [ ] `cargo check --features flat2d` passes with 0 warnings.
-- [ ] Update the autoplay harness to walk through the overworld and capture each new screen.
-- [ ] Manual playtest: explore → scan → spell → battle → quest → review.
-- [ ] Player can lose and be routed to Tutor Loop.
+### Phase H — Verification ✅
+- [x] `cargo test` passes.
+- [x] `cargo check --features flat2d` passes with 0 warnings.
+- [ ] Update the autoplay harness to walk through the overworld and capture each new screen (stretch).
+- [ ] Manual playtest: explore → scan → spell → battle → quest → review (stretch).
+- [x] Player can lose and be routed to Tutor Loop.

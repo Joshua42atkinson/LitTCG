@@ -14,6 +14,8 @@
     ],
     "AvatarPath": "textures/avatars/barnaby.png",
     "EvolutionRole": "word_identification",
+    "Subject": "simple-past",
+    "ScenarioText": "Barnaby keeps a small journal of yesterday's mistakes. Help him describe what happened using everyday past-tense verbs.",
     "Dialogue": {
       "Dawn": [
         "You're making words? Wow! Can you make a word for when you really want a hug but your arms are too long?",
@@ -49,6 +51,8 @@
       "-able"
     ],
     "EvolutionRole": "fuse_noun",
+    "Subject": "noun-formation",
+    "ScenarioText": "Yorick's workshop needs labels for new tools and places. Build nouns from roots and suffixes to finish the job.",
     "Dialogue": {
       "Dawn": [
         "The Slime Synthesizer is running hot today. Make sure you lift those heavy syllables with your knees, not your back.",
@@ -83,6 +87,8 @@
     ],
     "AvatarPath": "textures/avatars/kael.png",
     "EvolutionRole": "action_pairing",
+    "Subject": "active-voice",
+    "ScenarioText": "Kael is drafting a call to action for the realm guard. Choose strong, active verbs that inspire others to act.",
     "Dialogue": {
       "Dawn": [
         "The Slime Synthesizer hums with the power of a thousand bards! Forge your Etymons well, for they are your linguistic broadswords!",
@@ -118,6 +124,8 @@
       "-ness"
     ],
     "EvolutionRole": "emotional_adjectives",
+    "Subject": "tone",
+    "ScenarioText": "Martha is composing a letter to a friend who is struggling. Find words whose tone conveys warmth and empathy.",
     "Dialogue": {
       "Dawn": [
         "Working at the Slime Synthesizer takes so much energy. Make sure your Etymons have plenty of vowels, they need a balanced diet to grow big and strong!",
@@ -151,6 +159,8 @@
       "-ible"
     ],
     "EvolutionRole": "possessives",
+    "Subject": "possibility-prediction",
+    "ScenarioText": "Gribble is preparing a field report about what might happen tomorrow. Use modals and predictive language to complete his notes.",
     "Dialogue": {
       "Dawn": [
         "Have you studied the internal mechanisms of the Slime Synthesizer? I tried to take it apart once to see how it synthesizes vowels. Martha hit me with a broom.",
@@ -187,6 +197,8 @@
       "-ify"
     ],
     "EvolutionRole": "negation_suffixes",
+    "Subject": "negation",
+    "ScenarioText": "Nyx is writing protest signs that challenge the rules. Use prefixes and constructions that reverse or oppose meaning.",
     "Dialogue": {
       "Dawn": [
         "The Slime Synthesizer is cool and all, but have you tried plugging a guitar into it? The feedback loop is insane.",
@@ -223,6 +235,8 @@
       "-ly"
     ],
     "EvolutionRole": "descriptive_adjectives",
+    "Subject": "emotional-vocabulary",
+    "ScenarioText": "Vlad is curating a collection of love letters. Select words that carry precise emotional weight.",
     "Dialogue": {
       "Dawn": [
         "Listen to the Slime Synthesizer hum! It is the beating heart of Syllable Springs, forging love and logic from the ether!",
@@ -262,6 +276,8 @@
       "morph-"
     ],
     "EvolutionRole": "structural_suffixes",
+    "Subject": "formative-causative-verbs",
+    "ScenarioText": "Pygmalion is designing a ritual that transforms raw material into art. Use formative and causative verbs to describe the change.",
     "Dialogue": {
       "Dawn": [
         "The Slime Synthesizer hums a beautiful, creative tune! Remember, there are no mistakes in word-crafting, only happy little grammatical accidents!",
@@ -298,6 +314,8 @@
       "quasi-"
     ],
     "EvolutionRole": "approximation_suffixes",
+    "Subject": "comparison-humor",
+    "ScenarioText": "Chesty is writing jokes for the town crier. Finish the gags with words that compare, exaggerate, or sound almost-right.",
     "Dialogue": {
       "Dawn": [
         "The Slime Synthesizer is just a giant blender, change my mind. Toss those vowels in and see what explodes!",
@@ -337,6 +355,8 @@
       "omni-"
     ],
     "EvolutionRole": "determiners",
+    "Subject": "observation-knowledge",
+    "ScenarioText": "Ozymandias is recording observations for the town archive. Choose words that state facts, evidence, and reasoned conclusions.",
     "Dialogue": {
       "Dawn": [
         "The Slime Synthesizer sings a song of creation. Can you hear the consonants colliding? It is the sound of order.",
@@ -375,6 +395,8 @@
       "-ize"
     ],
     "EvolutionRole": "transformation_suffixes",
+    "Subject": "transformation",
+    "ScenarioText": "Zafir is scripting a transformation spell. Use words that describe change from one state into another.",
     "Dialogue": {
       "Dawn": [
         "The Slime Synthesizer is essentially a magical particle accelerator. Smash those vowels together and let's see what kind of semantic radiation we get!",
@@ -414,6 +436,8 @@
       "ordin-"
     ],
     "EvolutionRole": "formal_certification",
+    "Subject": "order-governance",
+    "ScenarioText": "Ignis is drafting a city ordinance. Use words that command, structure, and establish clear rules.",
     "Dialogue": {
       "Dawn": [
         "Remember, you need a Class-A permit to operate the Slime Synthesizer! Keep your vowels organized and clean up your morphological waste!",

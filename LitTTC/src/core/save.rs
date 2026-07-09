@@ -90,9 +90,11 @@ mod tests {
             total_xp: 120,
             active_summon_class: SummonClass::SemanticSlime,
             arm_length: 0.65,
+            last_grades: GradeScores::default(),
+            telemetry: TelemetrySeries::default(),
         };
         let mut spellbook = SpellBook::default();
-        spellbook.record_encounter("clarity", Channel::Mind, None, None, None);
+        spellbook.record_encounter("clarity", Channel::Mind, None, None, None, None);
         spellbook.upgrade_mastery("clarity", MasteryLevel::Mastered);
         let trail = WordTrail {
             visited_words: vec!["clarity".to_string()],

@@ -182,7 +182,7 @@ pub fn draw_cards(
             // For now, we attune to Mind by default, or look it up
             sheet.engage_channel(&Channel::Mind);
             sheet.words_encountered += 1;
-            spellbook.record_encounter(&word, Channel::Mind, None, None, None);
+            spellbook.record_encounter(&word, Channel::Mind, None, None, None, None);
 
             if !trail.visited_words.contains(&word) {
                 trail.visited_words.push(word);
@@ -254,13 +254,13 @@ pub fn initialize_player_deck(
         if !pool.is_empty() {
             for word in pool.iter().take(15) {
                 deck.cards.push(word.clone());
-                spellbook.record_encounter(word, Channel::Mind, None, None, None);
+                spellbook.record_encounter(word, Channel::Mind, None, None, None, None);
             }
         } else {
             let default_words = ["abandoned", "abc", "ability", "patience", "clarity", "courage", "wisdom", "strength"];
             for &word in &default_words {
                 deck.cards.push(word.to_string());
-                spellbook.record_encounter(word, Channel::Mind, None, None, None);
+                spellbook.record_encounter(word, Channel::Mind, None, None, None, None);
             }
         }
     }

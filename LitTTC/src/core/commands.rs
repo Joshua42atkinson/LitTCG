@@ -121,6 +121,7 @@ pub struct CommandContext<'w> {
     pub demo: ResMut<'w, crate::paywall::DemoSettings>,
     pub active_face: Option<Res<'w, crate::components::ActiveFace>>,
     pub vaam_metrics: Option<ResMut<'w, crate::battle::VaamMetrics>>,
+    pub slime_level: ResMut<'w, crate::components::SlimeLevel>,
 }
 
 pub fn handle_game_commands(
@@ -152,6 +153,7 @@ pub fn handle_game_commands(
         mut demo,
         active_face,
         mut vaam_metrics,
+        mut slime_level,
     } = ctx;
 
     for msg in messages.read() {
@@ -215,6 +217,7 @@ pub fn handle_game_commands(
                                         &state,
                                         face_ref,
                                         vaam_ref,
+                                        &mut *slime_level,
                                     );
                                     if result.is_effective {
                                         commands.spawn(crate::battle::CriticalHitTrigger);
@@ -233,14 +236,17 @@ pub fn handle_game_commands(
                     GameState::Questing => {
                         if let Some(ref mut session) = session_quest {
                             if session.filled_slots.len() >= session.slots.len() {
-                                crate::quest::complete_quest(session, &mut sheet, &mut spellbook, &mut grade_manager, &mut next_state, &mut commands, &state);
+                                let metrics_ref = vaam_metrics.as_deref_mut();
+                                crate::quest::complete_quest(session, &mut sheet, &mut spellbook, &mut grade_manager, &db, &mut next_state, &mut commands, &state, metrics_ref, &mut *slime_level);
                             } else if let Some(idx) = hand.selected {
                                 if idx < hand.cards.len() {
                                     let word = &hand.cards[idx];
                                     let slots_count = session.slots.len();
                                     for i in 0..slots_count {
                                         if !session.filled_slots.contains_key(&i) {
-                                            crate::quest::fill_slot(i, word, Some(sheet.active_summon_class), session);
+                                            if let Some(message) = crate::quest::fill_slot(i, word, Some(sheet.active_summon_class), session, &db, Some(&spellbook)) {
+                                                warn!("Socratic failure: {}", message);
+                                            }
                                             break;
                                         }
                                     }
@@ -273,6 +279,7 @@ pub fn handle_game_commands(
                                 &state,
                                 face_ref,
                                 vaam_ref,
+                                &mut *slime_level,
                             );
                             if result.is_effective {
                                 commands.spawn(crate::battle::CriticalHitTrigger);
@@ -343,7 +350,9 @@ pub fn handle_game_commands(
                             &state,
                             face_ref,
                             vaam_ref,
+                            &mut *slime_level,
                         );
+                        commands.spawn(crate::battle::CriticalHitTrigger);
                     }
                 }
             }
@@ -360,7 +369,8 @@ pub fn handle_game_commands(
             GameCommand::CompleteQuest => {
                 if let Some(ref mut session) = session_quest {
                     if session.filled_slots.len() >= session.slots.len() {
-                        crate::quest::complete_quest(session, &mut sheet, &mut spellbook, &mut grade_manager, &mut next_state, &mut commands, &state);
+                        let metrics_ref = vaam_metrics.as_deref_mut();
+                        crate::quest::complete_quest(session, &mut sheet, &mut spellbook, &mut grade_manager, &db, &mut next_state, &mut commands, &state, metrics_ref, &mut *slime_level);
                     } else {
                         warn!("Cannot complete quest: not all slots are filled!");
                     }
@@ -375,7 +385,9 @@ pub fn handle_game_commands(
                             let slots_count = session.slots.len();
                             for i in 0..slots_count {
                                 if !session.filled_slots.contains_key(&i) {
-                                    crate::quest::fill_slot(i, word, Some(sheet.active_summon_class), session);
+                                    if let Some(message) = crate::quest::fill_slot(i, word, Some(sheet.active_summon_class), session, &db, Some(&spellbook)) {
+                                        warn!("Socratic failure: {}", message);
+                                    }
                                     break;
                                 }
                             }
@@ -419,8 +431,9 @@ pub fn handle_game_commands(
                         return;
                     }
                 };
-                commands.insert_resource(crate::components::ActiveFace { face });
-                info!("DEBUG: Set active face to {:?}", face);
+                let faces = face.to_faces_state();
+                commands.insert_resource(crate::components::ActiveFace { face, faces });
+                info!("DEBUG: Set active face to {:?} ({})", face, faces);
             }
 
             GameCommand::PrintVaam => {

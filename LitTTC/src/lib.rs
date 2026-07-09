@@ -69,6 +69,7 @@ fn init_common_resources(app: &mut App) {
         .init_resource::<CurrentSpelling>()
         .init_resource::<CharacterSheet>()
         .init_resource::<SpellBook>()
+        .init_resource::<SlimeLevel>()
         .init_resource::<WordTrail>()
         .init_resource::<CurrentSlide>()
         .init_resource::<hand_tracking::HandTrackingState>()

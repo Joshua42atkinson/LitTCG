@@ -317,3 +317,128 @@ Added unit and integration tests across the engine. Test count: 39 → 128 (48 u
 - [x] `trunk build` succeeds (WASM target compiles)
 - [ ] `trunk serve` tested in Chrome
 - [ ] No critical bugs in the happy path
+
+---
+
+# IMPLEMENTATION_PLAN Phases 8–12 — Diapers Loop
+
+> Active loop target. One task per turn; `cargo test` after every code change.
+
+## Phase 8: Stealth Assessment / FACES Connotation Metrics
+
+### 8.1 Analysis — Define telemetry requirements
+- [x] Audit current `GradeScores` and `VaamMetrics` fields.
+- [x] Decide rolling-window size and HD-D sample parameters.
+- [x] Document metric-serialization schema for `save.json`.
+
+### 8.2 Design — Telemetry carrier architecture
+- [x] Design `CastTelemetry` struct: word, POS, grade axes, FACES resonance, combo flags.
+- [x] Design `LexicalDiversitySnapshot` for HD-D/MTLD.
+- [x] Design temporal series arrays inside `VaamMetrics`.
+
+### 8.3 Develop — HD-D and MTLD math
+- [x] Implement token-frequency rolling window in `VaamMetrics`.
+- [x] Implement `compute_hd_d()` hypergeometric function.
+- [x] Implement `compute_mtld()` windowed procedure.
+- [x] Add unit tests with known short-sample values.
+
+### 8.4 Develop — Syntactic complexity tracking
+- [x] Log literary-device combo usage (Echo, Armor Piercing, Overcharge).
+- [x] Compute combo-to-single-cast ratio over time.
+- [x] Add unit tests for ratio calculation.
+
+### 8.5 Implement — Hook telemetry into battle/quest
+- [x] Update `play_battle_card()` to append `CastTelemetry` and recalc metrics.
+- [x] Update `cast_sentence()` to append per-word telemetry and recalc metrics.
+- [x] Update `complete_quest()` to append slot telemetry and recalc metrics.
+- [x] Ensure all call sites pass updated parameter set.
+
+### 8.6 Evaluate — Test and commit
+- [/] `cargo test --lib` passes.
+- [/] `cargo test --test integration_tests` passes.
+- [ ] Commit: "Phase 8 complete: stealth assessment telemetry (HD-D, MTLD, syntactic complexity)"
+
+## Phase 9: CCSS ELA Metadata & Standard Mapping
+
+### 9.1 Design — Metadata schema
+- [ ] Define `ccss_tags: Vec<String>` for etymology roots and literary devices.
+- [ ] Define standard-code constants for L.9-10.3, L.9-10.4, L.9-10.5, L.11-12.3.
+
+### 9.2 Develop — Database tagging
+- [ ] Add `ccss_tags` field to etymology DB records (serde default for backward compat).
+- [ ] Tag a representative subset of roots/devices to demonstrate mapping.
+- [ ] Load tags into runtime structures.
+
+### 9.3 Implement — CCSS coverage tracker
+- [ ] Add `ccss_coverage: HashMap<String, u32>` to `VaamMetrics`.
+- [ ] Update battle/quest telemetry hooks to increment coverage counts.
+- [ ] Add unit test verifying coverage increments on tagged interactions.
+
+### 9.4 Evaluate — Test and commit
+- [ ] `cargo test` passes.
+- [ ] Commit: "Phase 9 complete: CCSS ELA metadata and standard coverage tracking"
+
+## Phase 10: Institutional Telemetry Serialization
+
+### 10.1 Design — JSON schema
+- [ ] Define standardized array field names for `CharacterSheet` and `VaamMetrics` serde output.
+- [ ] Decide whether arrays are inline or nested under a `telemetry` key.
+
+### 10.2 Implement — Serde arrays
+- [ ] Add historical series fields to `CharacterSheet` and `VaamMetrics`.
+- [ ] Ensure backward-compatible deserialization (default empty arrays).
+- [ ] Update `save.rs` roundtrip test.
+
+### 10.3 Implement — Dashboard parsing
+- [ ] Update `dashboard/index.html` to read new arrays.
+- [ ] Render CCSS coverage heatmap.
+- [ ] Render lexical-diversity and syntactic-complexity trend lines.
+- [ ] Render IEP-friendly raw numbers table.
+
+### 10.4 Evaluate — Test and commit
+- [ ] `cargo test` passes.
+- [ ] Manual check: dashboard loads a sample `save.json` without errors.
+- [ ] Commit: "Phase 10 complete: institutional serialization and dashboard reports"
+
+## Phase 11: 2D Demo Polish
+
+### 11.1 Implement — Battle UI polish
+- [ ] Show Slime's current face icon in 2D battle UI.
+- [ ] Show word card's intrinsic FACES icon.
+
+### 11.2 Implement — Feedback polish
+- [ ] Show three-axis grade breakdown after each cast.
+- [ ] Show Socratic failure text in quest UI.
+
+### 11.3 Evaluate — Test and commit
+- [ ] `cargo test` passes.
+- [ ] Manual playtest of 2D battle and quest flow.
+- [ ] Commit: "Phase 11 complete: 2D demo polish"
+
+## Phase 12: Grant Capitalization & Go-to-Market Documentation
+
+### 12.1 Analysis — Compile technical innovation narrative
+- [ ] Extract HD-D/MTLD technical proof into a one-page MTI innovation brief.
+- [ ] Extract ECD framework summary for SBIR specific aims.
+
+### 12.2 Design — Funding sequence
+- [ ] Finalize MTI BIF ask amount and match-fund plan.
+- [ ] Map application timeline against Phase 8–11 completion dates.
+
+### 12.3 Implement — Documentation
+- [ ] Ensure `docs/GRANT_STRATEGY.md` is current with all cited funding vehicles.
+- [ ] Update `GDD.md` Commercialization and `MARKETING_PLAN.md` as needed.
+- [ ] Draft MTI BIF application outline (no submission; internal doc).
+- [ ] Draft SBIR Phase I specific aims page (no submission; internal doc).
+
+### 12.4 Evaluate — Review and commit
+- [ ] Peer/self-review docs for consistency.
+- [ ] Commit: "Phase 12 complete: grant capitalization documentation"
+
+---
+
+## Diapers Loop Exit Criteria
+
+- [ ] Phases 8, 9, 10, 11, and 12 are fully checked off.
+- [ ] Final `cargo test` passes.
+- [ ] `walkthrough.md` updated with a summary of all completed phases.

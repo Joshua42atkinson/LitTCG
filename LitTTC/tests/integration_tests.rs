@@ -85,10 +85,16 @@ fn test_quest_progression() {
         slots: vec!["ADJECTIVE".to_string()],
         filled_slots: HashMap::new(),
         xp_reward: npc_quest.rewards.xp,
+        expected_faces: npc_quest.expected_faces,
+        socratic_failure: npc_quest.socratic_failure.clone(),
+        subject: npc_quest.subject.clone(),
+        scenario_text: npc_quest.scenario_text.clone(),
     };
-    
+
     // Fill slot and complete
-    quest::fill_slot(0, "patience", None, &mut session);
+    let db_ref = app.world().resource::<GameDatabase>();
+    let spellbook_ref = app.world().resource::<SpellBook>();
+    quest::fill_slot(0, "patience", None, &mut session, db_ref, Some(&spellbook_ref));
     assert_eq!(session.filled_slots.get(&0).unwrap().0, "patience");
     
     let mut sheet = CharacterSheet::default();
@@ -98,18 +104,24 @@ fn test_quest_progression() {
     let mut world2 = World::new();
     let mut test_commands = Commands::new(&mut queue2, &world2);
     let mut grade_manager = quest::GradeManager::default();
+    let mut vaam_metrics = battle::VaamMetrics::default();
+    let mut slime_level = SlimeLevel::default();
     let state = State::new(GameState::Questing);
 
+    let db_ref2 = app.world().resource::<GameDatabase>();
     quest::complete_quest(
         &session,
         &mut sheet,
         &mut spellbook,
         &mut grade_manager,
+        &db_ref2,
         &mut test_next_state,
         &mut test_commands,
         &state,
+        Some(&mut vaam_metrics),
+        &mut slime_level,
     );
-    
+
     assert_eq!(sheet.total_xp, npc_quest.rewards.xp as u64);
     assert_eq!(sheet.words_encountered, 1);
 }
@@ -167,14 +179,15 @@ fn test_battle_combat_mechanics() {
 
     // Play a word with high semantic distance (counter/block): "abc" vs "abandoned"
     let mut vaam = battle::VaamMetrics::default();
-    let result_1 = battle::play_battle_card("abc", &mut session, &db, &mut spellbook, &mut next_state, &sheet, &state, None, Some(&mut vaam));
+    let mut slime_level = SlimeLevel::default();
+    let result_1 = battle::play_battle_card("abc", &mut session, &db, &mut spellbook, &mut next_state, &sheet, &state, None, Some(&mut vaam), &mut slime_level);
     assert!(result_1.is_effective, "Playing abc should be semantically effective");
     assert!(result_1.is_counter, "High distance should trigger counter logic");
     assert!(session.typo_health < 100, "Counter should damage typo");
     assert_eq!(session.player_health, 100, "Counter should not damage player");
 
     // Play a word with low semantic distance (synonym/heavy attack): "abandoned" vs "abandoned"
-    let result_2 = battle::play_battle_card("abandoned", &mut session, &db, &mut spellbook, &mut next_state, &sheet, &state, None, Some(&mut vaam));
+    let result_2 = battle::play_battle_card("abandoned", &mut session, &db, &mut spellbook, &mut next_state, &sheet, &state, None, Some(&mut vaam), &mut slime_level);
     assert!(result_2.is_effective, "Playing identical word should be effective (synonym)");
     assert!(result_2.is_synonym, "Identical word should trigger synonym logic");
     assert!(session.typo_health < 100, "Synonym should deal heavy damage");
@@ -197,7 +210,8 @@ fn test_wand_duel_counter_antonym_block() {
 
     // Play a word with high semantic distance (antonym/counter): "sad" vs "happy"
     let mut vaam = battle::VaamMetrics::default();
-    let result = battle::play_battle_card("sad", &mut session, &db, &mut spellbook, &mut next_state, &sheet, &state, None, Some(&mut vaam));
+    let mut slime_level = SlimeLevel::default();
+    let result = battle::play_battle_card("sad", &mut session, &db, &mut spellbook, &mut next_state, &sheet, &state, None, Some(&mut vaam), &mut slime_level);
     
     assert!(result.is_effective, "Antonym should be effective");
     assert!(result.is_counter, "High distance should trigger counter logic");
@@ -221,10 +235,12 @@ fn test_local_save_system() {
         total_xp: 450,
         active_summon_class: SummonClass::SemanticSlime,
         arm_length: 0.65,
+        last_grades: GradeScores::default(),
+        telemetry: TelemetrySeries::default(),
     };
     
     let mut spellbook = SpellBook::default();
-    spellbook.record_encounter("clarity", Channel::Mind, None, None, None);
+    spellbook.record_encounter("clarity", Channel::Mind, None, None, None, None);
     spellbook.upgrade_mastery("clarity", MasteryLevel::Mastered);
     
     let trail = WordTrail {
@@ -375,6 +391,7 @@ fn test_command_handler_select_card() {
     app.init_resource::<quest::GradeManager>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
+    app.init_resource::<SlimeLevel>();
     app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();
@@ -408,6 +425,7 @@ fn test_command_handler_dismiss_review() {
     app.init_resource::<Hand>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
+    app.init_resource::<SlimeLevel>();
     app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();
@@ -442,6 +460,7 @@ fn test_empty_hand_cannot_start_battle() {
     app.init_resource::<Hand>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
+    app.init_resource::<SlimeLevel>();
     app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();
@@ -472,6 +491,7 @@ fn test_blocked_word_rejected() {
     app.init_resource::<Hand>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
+    app.init_resource::<SlimeLevel>();
     app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();
@@ -523,18 +543,24 @@ fn test_quest_completion_with_empty_slots_fails() {
         slots,
         filled_slots: HashMap::new(),
         xp_reward: quest.rewards.xp,
+        expected_faces: quest.expected_faces,
+        socratic_failure: quest.socratic_failure.clone(),
+        subject: quest.subject.clone(),
+        scenario_text: quest.scenario_text.clone(),
     };
 
     let mut sheet = CharacterSheet::default();
     let mut spellbook = SpellBook::default();
     let mut grade_manager = quest::GradeManager::default();
+    let mut vaam_metrics = battle::VaamMetrics::default();
+    let mut slime_level = SlimeLevel::default();
     let mut next_state = NextState::default();
     let mut queue = bevy::ecs::world::CommandQueue::default();
     let mut world = World::new();
     let mut commands = Commands::new(&mut queue, &world);
     let state = State::new(GameState::Questing);
 
-    quest::complete_quest(&session, &mut sheet, &mut spellbook, &mut grade_manager, &mut next_state, &mut commands, &state);
+    quest::complete_quest(&session, &mut sheet, &mut spellbook, &mut grade_manager, &db, &mut next_state, &mut commands, &state, Some(&mut vaam_metrics), &mut slime_level);
 
     assert_eq!(sheet.total_xp, 0, "Incomplete quest should not award XP");
 }
@@ -556,6 +582,7 @@ fn test_new_game_archives_existing_save() {
     app.init_resource::<Hand>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
+    app.init_resource::<SlimeLevel>();
     app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();
@@ -589,6 +616,7 @@ fn test_demo_word_limit_triggers_paywall() {
     app.init_resource::<Hand>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
+    app.init_resource::<SlimeLevel>();
     app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();
@@ -632,6 +660,7 @@ fn test_select_card_out_of_bounds_warns() {
     app.init_resource::<Hand>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
+    app.init_resource::<SlimeLevel>();
     app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();
@@ -662,6 +691,7 @@ fn test_invalid_word_spawns_unstable_mutant() {
     app.init_resource::<Hand>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
+    app.init_resource::<SlimeLevel>();
     app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();
@@ -717,6 +747,7 @@ fn test_start_quest_unknown_npc_does_nothing() {
     app.init_resource::<Hand>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
+    app.init_resource::<SlimeLevel>();
     app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();
@@ -748,6 +779,7 @@ fn test_fill_quest_slot_out_of_bounds_warns() {
     app.init_resource::<Hand>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
+    app.init_resource::<SlimeLevel>();
     app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();
@@ -762,6 +794,10 @@ fn test_fill_quest_slot_out_of_bounds_warns() {
         slots: vec!["NOUN".to_string()],
         filled_slots: HashMap::new(),
         xp_reward: 10,
+        expected_faces: None,
+        socratic_failure: None,
+        subject: "noun-formation".to_string(),
+        scenario_text: "Pick a noun that completes the verse.".to_string(),
     });
     app.update();
 
@@ -790,6 +826,7 @@ fn test_deck_empty_transitions_to_collecting() {
     app.init_resource::<Hand>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
+    app.init_resource::<SlimeLevel>();
     app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();
@@ -844,6 +881,7 @@ fn test_settings_command_transitions_to_settings_state() {
     app.init_resource::<Hand>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
+    app.init_resource::<SlimeLevel>();
     app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();
@@ -873,6 +911,7 @@ fn test_difficulty_command_transitions_to_difficulty_state() {
     app.init_resource::<Hand>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
+    app.init_resource::<SlimeLevel>();
     app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();
@@ -902,6 +941,7 @@ fn test_pet_collection_command_transitions_to_pet_collection_state() {
     app.init_resource::<Hand>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
+    app.init_resource::<SlimeLevel>();
     app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();
@@ -931,6 +971,7 @@ fn test_complete_quest_fills_and_awards_xp() {
     app.init_resource::<Hand>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
+    app.init_resource::<SlimeLevel>();
     app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();
@@ -945,6 +986,10 @@ fn test_complete_quest_fills_and_awards_xp() {
         slots: vec!["NOUN".to_string()],
         filled_slots: HashMap::new(),
         xp_reward: 42,
+        expected_faces: None,
+        socratic_failure: None,
+        subject: "noun-formation".to_string(),
+        scenario_text: "Pick a noun that completes the verse.".to_string(),
     });
     app.update();
 
@@ -977,7 +1022,8 @@ fn test_battle_mid_range_normal_damage() {
 
     // Play a word with mid-range semantic distance: normal damage
     let mut vaam = battle::VaamMetrics::default();
-    let result = battle::play_battle_card("abc", &mut session, &db, &mut spellbook, &mut next_state, &sheet, &state, None, Some(&mut vaam));
+    let mut slime_level = SlimeLevel::default();
+    let result = battle::play_battle_card("abc", &mut session, &db, &mut spellbook, &mut next_state, &sheet, &state, None, Some(&mut vaam), &mut slime_level);
     assert!(result.is_effective, "Word should be effective");
     assert!(session.typo_health < 100, "Damage should hurt typo");
     assert_eq!(session.player_health, 100, "Effective damage should not hurt player");
@@ -1001,6 +1047,7 @@ fn test_valid_spelling_transitions_through_reveal_pet() {
     app.init_resource::<Hand>();
     app.init_resource::<SpellBook>();
     app.init_resource::<CharacterSheet>();
+    app.init_resource::<SlimeLevel>();
     app.init_resource::<WordTrail>();
     app.init_resource::<chat::ChatLog>();
     app.init_resource::<letter::CurrentSpelling>();

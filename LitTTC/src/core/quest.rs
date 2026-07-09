@@ -3,6 +3,8 @@ use bevy::prelude::*;
 use std::collections::HashMap;
 use crate::components::*;
 use crate::database::*;
+use crate::battle::{self, compute_resonance};
+use faces_protocol::FacesState;
 
 #[derive(Resource, Debug, Clone)]
 pub struct QuestSession {
@@ -11,6 +13,14 @@ pub struct QuestSession {
     pub slots: Vec<String>, // e.g. ["ADJECTIVE", "NOUN", "VERB"]
     pub filled_slots: HashMap<usize, (String, Option<SummonClass>)>, // slot_index -> (word, summon_class)
     pub xp_reward: u32,
+    /// Optional environmental FACES the quest expects from filled words.
+    pub expected_faces: Option<FacesState>,
+    /// Socratic prompt shown when a word's FACES does not match the expected mood.
+    pub socratic_failure: Option<String>,
+    /// The language subject this quest trains (e.g., "simple-past", "negation").
+    pub subject: String,
+    /// Narrative scenario text introducing the language problem to the player/learner.
+    pub scenario_text: String,
 }
 
 fn archetype_key(npc: &NpcData) -> String {
@@ -66,12 +76,28 @@ pub fn start_quest(
         }
     }
 
+    let npc_data = db.npcs.get(npc_name);
+    let subject = if quest.subject.is_empty() {
+        npc_data.map(|n| n.subject.clone()).unwrap_or_default()
+    } else {
+        quest.subject.clone()
+    };
+    let scenario_text = if quest.scenario_text.is_empty() {
+        npc_data.map(|n| n.scenario_text.clone()).unwrap_or_default()
+    } else {
+        quest.scenario_text.clone()
+    };
+
     commands.insert_resource(QuestSession {
         title: quest.title.clone(),
         template: quest.template.clone(),
         slots,
         filled_slots: HashMap::new(),
         xp_reward: quest.rewards.xp,
+        expected_faces: quest.expected_faces,
+        socratic_failure: quest.socratic_failure.clone(),
+        subject,
+        scenario_text,
     });
 
     info!("Quest begun: {} with {}", quest.title, npc_name);
@@ -84,11 +110,54 @@ pub fn fill_slot(
     word: &str,
     summon_class: Option<SummonClass>,
     session: &mut QuestSession,
-) {
-    if slot_idx < session.slots.len() {
-        session.filled_slots.insert(slot_idx, (word.to_string(), summon_class));
-        info!("Filled quest slot {} with word: {}", slot_idx, word);
+    db: &GameDatabase,
+    spellbook: Option<&SpellBook>,
+) -> Option<String> {
+    if slot_idx >= session.slots.len() {
+        warn!("fill_slot index {} out of bounds (slots: {})", slot_idx, session.slots.len());
+        return None;
     }
+
+    let slot_type = session.slots[slot_idx].to_lowercase();
+    let lower_word = word.to_lowercase();
+    let word_pos = db.words.get(&lower_word).map(|s| s.part_of_speech.to_lowercase()).unwrap_or_default();
+
+    let matches = if slot_type == "word" || slot_type == "any" {
+        true
+    } else if !word_pos.is_empty() {
+        word_pos == slot_type
+    } else {
+        // No POS data; accept anything to keep the MVP playable.
+        true
+    };
+
+    if !matches {
+        warn!("Grammar mismatch: slot {} wants '{}' but '{}' is '{}'", slot_idx, slot_type, word, word_pos);
+        return None;
+    }
+
+    // Environmental FACES validation: the word's intrinsic mood must resonate with the quest's expected mood.
+    if let Some(expected) = session.expected_faces {
+        let intrinsic = spellbook
+            .and_then(|book| book.entries.iter().find(|e| e.word == lower_word))
+            .and_then(|entry| entry.faces)
+            .map(|f| f.0);
+
+        if let Some(intrinsic_faces) = intrinsic {
+            let resonance = compute_resonance(intrinsic_faces, expected);
+            if resonance < 0.55 {
+                let message = session.socratic_failure.clone().unwrap_or_else(|| {
+                    format!("The mood doesn't fit. '{}' feels {:.0}% aligned with this verse.", word, resonance * 100.0)
+                });
+                warn!("FACES mismatch in slot {}: {} (resonance {:.2})", slot_idx, message, resonance);
+                return Some(message);
+            }
+        }
+    }
+
+    session.filled_slots.insert(slot_idx, (word.to_string(), summon_class));
+    info!("Filled quest slot {} with word: {}", slot_idx, word);
+    None
 }
 
 pub fn complete_quest(
@@ -96,24 +165,35 @@ pub fn complete_quest(
     sheet: &mut CharacterSheet,
     spellbook: &mut SpellBook,
     grade_manager: &mut GradeManager,
+    db: &GameDatabase,
     next_state: &mut NextState<GameState>,
     commands: &mut Commands,
     state: &State<GameState>,
-) {
+    mut vaam_metrics: Option<&mut battle::VaamMetrics>,
+    slime_level: &mut SlimeLevel,
+) -> GradeScores {
     if session.filled_slots.len() < session.slots.len() {
         warn!("Cannot finish verse: not all slots are filled!");
-        return;
+        return GradeScores::default();
     }
 
     // Reconstruct the final text
     let mut final_text = session.template.clone();
     let mut bonus_xp = 0;
 
+    // Grade accumulation across slots.
+    let mut total_syntax = 0.0f32;
+    let mut total_semantics = 0.0f32;
+    let mut total_pragmatics = 0.0f32;
+    let mut graded_slots = 0usize;
+
     for i in 0..session.slots.len() {
         let placeholder = format!("{{{}}}", session.slots[i]);
+        let slot_label = session.slots[i].to_lowercase();
         let (replacement, summon_class) = session.filled_slots.get(&i).cloned().unwrap_or_default();
         final_text = final_text.replace(&placeholder, &replacement);
-        
+        let lower_replacement = replacement.to_lowercase();
+
         // Upgrade mastery for the used words
         spellbook.upgrade_mastery(&replacement, MasteryLevel::Experienced);
 
@@ -126,13 +206,83 @@ pub fn complete_quest(
                 },
             }
         }
+
+        // Three-axis grading for this slot.
+        let (syntax, semantics, pragmatics) = if let Some(stats) = db.words.get(&lower_replacement) {
+            let pos = stats.part_of_speech.to_lowercase();
+            let syntax_score = if slot_label.contains(&pos) || pos.contains(&slot_label) {
+                1.0
+            } else if slot_label == "word" || slot_label.is_empty() {
+                0.8
+            } else {
+                0.3
+            };
+
+            let semantics_score = 1.0; // real word in dictionary
+
+            let pragmatics_score = if let Some(entry) = spellbook.entries.iter().find(|e| e.word == lower_replacement) {
+                entry.faces.map(|f| compute_resonance(f.0, FacesState::default())).unwrap_or(0.5)
+            } else {
+                0.5
+            };
+
+            (syntax_score, semantics_score, pragmatics_score)
+        } else {
+            (0.0, 0.0, 0.0)
+        };
+
+        total_syntax += syntax;
+        total_semantics += semantics;
+        total_pragmatics += pragmatics;
+        graded_slots += 1;
+
+        // Record stealth-assessment telemetry for this filled slot.
+        if let Some(ref mut metrics) = vaam_metrics {
+            let slot_grades = GradeScores { syntax, semantics, pragmatics };
+            let event = CastTelemetry {
+                word: lower_replacement.clone(),
+                pos: db.words.get(&lower_replacement).map(|s| s.part_of_speech.to_lowercase()),
+                grades: slot_grades,
+                faces_resonance: pragmatics,
+                effective: true,
+                combo: false,
+                device: None,
+                ccss_tags: Vec::new(),
+                subject: Some(session.subject.clone()),
+                sequence: metrics.telemetry.cast_log.len() as u64,
+            };
+            metrics.record_cast_telemetry(event);
+        }
     }
 
+    let grades = if graded_slots > 0 {
+        let count = graded_slots as f32;
+        GradeScores {
+            syntax: total_syntax / count,
+            semantics: total_semantics / count,
+            pragmatics: total_pragmatics / count,
+        }
+    } else {
+        GradeScores::default()
+    };
+
+    sheet.last_grades = grades;
+
     info!("Quest Verse completed! Sentence: '{}'", final_text);
-    
+    info!("Quest grades — syntax: {:.2}, semantics: {:.2}, pragmatics: {:.2}",
+        grades.syntax, grades.semantics, grades.pragmatics);
+
     // Award rewards
     sheet.total_xp += (session.xp_reward + bonus_xp) as u64;
     sheet.words_encountered += 1;
+
+    // Track subject mastery for NPC scenario training.
+    if !session.subject.is_empty() {
+        if let Some(ref mut metrics) = vaam_metrics {
+            metrics.record_subject_mastery(&session.subject);
+            info!("Subject mastery recorded: {}", session.subject);
+        }
+    }
 
     // Check for rank up and unlock realm
     if grade_manager.check_grade_up(sheet.total_xp) {
@@ -144,10 +294,20 @@ pub fn complete_quest(
         }
     }
 
+    // Award card XP for every word used in the verse plus global Slime XP.
+    let quest_xp = (session.xp_reward + bonus_xp) + 10;
+    for (_, (word, _)) in &session.filled_slots {
+        spellbook.add_card_xp(word, quest_xp / session.filled_slots.len() as u32 + 1);
+    }
+    slime_level.add_xp(quest_xp);
+    info!("Slime gained {} XP (level {} stage {})", quest_xp, slime_level.level, slime_level.evolution_stage);
+
     commands.remove_resource::<QuestSession>();
     let next = if cfg!(feature = "flat2d") { GameState::Exploring } else { GameState::Playing };
     crate::commands::log_state_transition(state.get(), next.clone());
     next_state.set(next);
+
+    grades
 }
 
 pub fn get_npc_dialogue(npc_name: &str, db: &GameDatabase, time_of_day: &str) -> String {
@@ -396,9 +556,14 @@ fn spawn_quest_ui_2d(
         BackgroundColor(Color::srgb(0.1, 0.1, 0.2)),
         BorderColor::all(Color::srgb(0.4, 0.4, 0.9)),
     )).with_children(|parent| {
+        let scenario_block = if session.scenario_text.is_empty() {
+            String::new()
+        } else {
+            format!("\n\nScenario: {}\nSubject: {}", session.scenario_text, session.subject)
+        };
         parent.spawn((
             QuestUiText,
-            Text::new(format!("Quest: {}\n\n{}\n\n[Click cards & click Play Card button to place, click Play Card to Submit when full]", session.title, get_display_sentence(&session))),
+            Text::new(format!("Quest: {}{}\n\n{}\n\n[Click cards & click Play Card button to place, click Play Card to Submit when full]", session.title, scenario_block, get_display_sentence(&session))),
             TextFont { font_size: 24.0, ..default() },
             TextColor(Color::WHITE),
         ));
@@ -419,9 +584,14 @@ fn spawn_quest_ui_2d(
         },
         ImageNode::new(asset_server.load(crate::asset_catalog::QUEST_BOARD)),
     )).with_children(|parent| {
+        let scenario_block = if session.scenario_text.is_empty() {
+            String::new()
+        } else {
+            format!("\n\nScenario: {}\nSubject: {}", session.scenario_text, session.subject)
+        };
         parent.spawn((
             QuestUiText,
-            Text::new(format!("Quest: {}\n\n{}\n\n[Click cards & click Play Card button to place, click Play Card to Submit when full]", session.title, get_display_sentence(&session))),
+            Text::new(format!("Quest: {}{}\n\n{}\n\n[Click cards & click Play Card button to place, click Play Card to Submit when full]", session.title, scenario_block, get_display_sentence(&session))),
             TextFont { font_size: 24.0, ..default() },
             TextColor(Color::WHITE),
         ));
@@ -439,7 +609,12 @@ fn update_quest_ui_2d(
     };
 
     for mut text in &mut text_query {
-        text.0 = format!("Quest: {}\n\n{}\n\n[Click cards & click Play Card button to place, click Play Card to Submit when full]", session.title, get_display_sentence(&session));
+        let scenario_block = if session.scenario_text.is_empty() {
+            String::new()
+        } else {
+            format!("\n\nScenario: {}\nSubject: {}", session.scenario_text, session.subject)
+        };
+        text.0 = format!("Quest: {}{}\n\n{}\n\n[Click cards & click Play Card button to place, click Play Card to Submit when full]", session.title, scenario_block, get_display_sentence(&session));
     }
 }
 
@@ -465,8 +640,13 @@ mod tests {
             slots: vec!["ADJECTIVE".to_string()],
             filled_slots: HashMap::new(),
             xp_reward: 10,
+            expected_faces: None,
+            socratic_failure: None,
+            subject: "tone".to_string(),
+            scenario_text: "Choose a word that matches the mood.".to_string(),
         };
-        fill_slot(0, "brave", None, &mut session);
+        let db = GameDatabase::default();
+        fill_slot(0, "brave", None, &mut session, &db, None);
         assert_eq!(session.filled_slots.get(&0).unwrap().0, "brave");
     }
 
@@ -478,8 +658,13 @@ mod tests {
             slots: vec!["ADJECTIVE".to_string()],
             filled_slots: HashMap::new(),
             xp_reward: 10,
+            expected_faces: None,
+            socratic_failure: None,
+            subject: "tone".to_string(),
+            scenario_text: "Choose a word that matches the mood.".to_string(),
         };
-        fill_slot(5, "brave", None, &mut session);
+        let db = GameDatabase::default();
+        fill_slot(5, "brave", None, &mut session, &db, None);
         assert!(session.filled_slots.is_empty());
     }
 
@@ -491,6 +676,10 @@ mod tests {
             slots: vec!["ADJECTIVE".to_string()],
             filled_slots: HashMap::new(),
             xp_reward: 10,
+            expected_faces: None,
+            socratic_failure: None,
+            subject: "tone".to_string(),
+            scenario_text: "Choose a word that matches the mood.".to_string(),
         };
         let text = get_display_sentence(&session);
         assert_eq!(text, "I feel [ADJECTIVE].");
@@ -504,10 +693,88 @@ mod tests {
             slots: vec!["ADJECTIVE".to_string()],
             filled_slots: HashMap::new(),
             xp_reward: 10,
+            expected_faces: None,
+            socratic_failure: None,
+            subject: "tone".to_string(),
+            scenario_text: "Choose a word that matches the mood.".to_string(),
         };
-        fill_slot(0, "brave", None, &mut session);
+        let db = GameDatabase::default();
+        fill_slot(0, "brave", None, &mut session, &db, None);
         let text = get_display_sentence(&session);
         assert_eq!(text, "I feel BRAVE.");
+    }
+
+    #[test]
+    fn fill_slot_returns_socratic_failure_on_faces_mismatch() {
+        use faces_protocol::{Action, Aura, Container, Focus};
+
+        let db = GameDatabase::load_from_embedded().unwrap();
+        let mut spellbook = SpellBook::default();
+        spellbook.record_encounter(
+            "chaos",
+            Channel::Mind,
+            None,
+            None,
+            None,
+            Some(PetFacesState(FacesState::new(Aura::URGENT, Container::Sharp, Focus::Intense, Action::Assertive))),
+        );
+
+        let mut session = QuestSession {
+            title: "Test".to_string(),
+            template: "I feel {ADJECTIVE}.".to_string(),
+            slots: vec!["ADJECTIVE".to_string()],
+            filled_slots: HashMap::new(),
+            xp_reward: 10,
+            expected_faces: Some(FacesState::new(Aura::CALM, Container::Neutral, Focus::Neutral, Action::Thoughtful)),
+            socratic_failure: Some("Try a calmer word.".to_string()),
+            subject: "tone".to_string(),
+            scenario_text: "Choose a word that matches the mood.".to_string(),
+        };
+
+        let result = fill_slot(0, "chaos", None, &mut session, &db, Some(&spellbook));
+
+        assert!(result.is_some(), "fill_slot should return Socratic failure on FACES mismatch");
+        assert_eq!(result.unwrap(), "Try a calmer word.");
+        assert!(!session.filled_slots.contains_key(&0), "slot should not be filled on FACES mismatch");
+    }
+
+    #[test]
+    fn complete_quest_computes_and_stores_grades() {
+        let db = GameDatabase::load_from_embedded().unwrap();
+        let mut session = QuestSession {
+            title: "Test".to_string(),
+            template: "I feel {ADJECTIVE}.".to_string(),
+            slots: vec!["ADJECTIVE".to_string()],
+            filled_slots: HashMap::new(),
+            xp_reward: 10,
+            expected_faces: None,
+            socratic_failure: None,
+            subject: "tone".to_string(),
+            scenario_text: "Choose a word that matches the mood.".to_string(),
+        };
+        fill_slot(0, "brave", None, &mut session, &db, None);
+
+        let mut sheet = CharacterSheet::default();
+        let mut spellbook = SpellBook::default();
+        spellbook.record_encounter("brave", Channel::Heart, None, None, None, None);
+        let mut grade_manager = GradeManager::default();
+        let mut vaam_metrics = battle::VaamMetrics::default();
+        let mut slime_level = SlimeLevel::default();
+        let mut next_state = NextState::default();
+        let mut queue = bevy::ecs::world::CommandQueue::default();
+        let mut world = World::new();
+        let mut commands = Commands::new(&mut queue, &world);
+        let state = State::new(GameState::Questing);
+
+        let grades = complete_quest(&session, &mut sheet, &mut spellbook, &mut grade_manager, &db, &mut next_state, &mut commands, &state, Some(&mut vaam_metrics), &mut slime_level);
+
+        assert!(grades.syntax > 0.0, "syntax grade should be positive for a matching POS");
+        assert_eq!(grades.semantics, 1.0, "real dictionary word should score full semantics");
+        assert_eq!(sheet.last_grades, grades, "grades should be stored on the character sheet");
+        assert_eq!(vaam_metrics.subject_mastery.get("tone"), Some(&1), "subject mastery should be recorded for the quest subject");
+        assert!(slime_level.xp > 0, "slime should gain XP from quest completion");
+        let entry = spellbook.entries.iter().find(|e| e.word == "brave").unwrap();
+        assert!(entry.card_xp > 0, "word card should gain XP from quest completion");
     }
 
     #[test]

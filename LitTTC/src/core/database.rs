@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use bevy::asset::{AssetLoader, LoadContext, io::Reader, AssetApp};
 use bevy::reflect::TypePath;
 use serde::Deserialize;
+use faces_protocol::FacesState;
 
 #[derive(Asset, TypePath, Debug, Clone)]
 pub struct RawJsonAsset {
@@ -122,6 +123,18 @@ pub struct NpcQuest {
     #[serde(rename = "Rewards")]
     #[serde(default)]
     pub rewards: Rewards,
+    #[serde(rename = "ExpectedFaces")]
+    #[serde(default)]
+    pub expected_faces: Option<FacesState>,
+    #[serde(rename = "SocraticFailure")]
+    #[serde(default)]
+    pub socratic_failure: Option<String>,
+    #[serde(rename = "Subject")]
+    #[serde(default)]
+    pub subject: String,
+    #[serde(rename = "ScenarioText")]
+    #[serde(default)]
+    pub scenario_text: String,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -155,6 +168,12 @@ pub struct NpcData {
     #[serde(rename = "Archetype")]
     #[serde(default)]
     pub archetype: String,
+    #[serde(rename = "Subject")]
+    #[serde(default)]
+    pub subject: String,
+    #[serde(rename = "ScenarioText")]
+    #[serde(default)]
+    pub scenario_text: String,
 }
 
 #[derive(Resource, Debug, Clone)]

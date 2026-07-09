@@ -7,7 +7,14 @@
         "RequiredRoles": [
           "Support",
           "Tank"
-        ]
+        ],
+        "ExpectedFaces": {
+          "aura": 27,
+          "container": "Neutral",
+          "focus": "Neutral",
+          "action": "Thoughtful"
+        },
+        "SocraticFailure": "Barnaby's celebration calls for a calmer, more reflective word. Which choice feels gentle?"
       },
       {
         "Title": "Donut Dreams",

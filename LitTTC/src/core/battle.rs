@@ -4,7 +4,38 @@ use crate::components::*;
 use crate::database::*;
 use crate::quest;
 use crate::deck;
+use faces_protocol::FacesState;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// Probability of drawing zero successes in a sample of size `k`
+/// from a population of size `N` containing `K` successes.
+/// Uses exact factorial-free arithmetic to avoid overflow.
+fn hypergeometric_prob_zero(population: u32, successes: u32, sample: u32) -> f64 {
+    if sample == 0 || successes == 0 || population == 0 {
+        return 1.0;
+    }
+    if sample > population || successes >= population {
+        return 0.0;
+    }
+
+    let failures = population - successes;
+    if sample > failures {
+        return 0.0;
+    }
+    // P(X = 0) = C(N-K, k) / C(N, k)
+    // Compute as a running product to stay numerically stable.
+    let mut prob = 1.0f64;
+    for i in 0..sample {
+        let num = (failures - i) as f64;
+        let den = (population - i) as f64;
+        if den == 0.0 {
+            return 0.0;
+        }
+        prob *= num / den;
+    }
+    prob
+}
 
 const WAND_DUEL_DISTANCE_BASE_MULTIPLIER: f32 = 1.5;
 const WAND_DUEL_DISTANCE_SCALE: f32 = 0.2;
@@ -27,6 +58,11 @@ const VERB_ACTION_MULTIPLIER: f32 = 1.3;
 const OXYMORON_ARMOR_PIERCING: f32 = 2.0; // Bypasses shields
 const HYPERBOLE_OVERCHARGE: f32 = 3.0; // Triple damage with recoil
 
+// Stealth assessment constants
+const LEXICAL_DIVERSITY_WINDOW: usize = 100;
+const MTLD_FACTOR_SIZE: usize = 10;
+const HD_D_SAMPLE_SIZE: usize = 42;
+
 // VAAM (Vocabulary Acquisition Autonomous Meaning) Tracking
 //
 // VAAM is the pedagogical framework that measures how players acquire vocabulary
@@ -41,7 +77,7 @@ const HYPERBOLE_OVERCHARGE: f32 = 3.0; // Triple damage with recoil
 // This tracking system provides quantitative data on educational progress without
 // relying on traditional quiz-based assessment.
 
-#[derive(Debug, Clone, Default, Resource)]
+#[derive(Debug, Clone, Default, Resource, Serialize, Deserialize)]
 pub struct VaamMetrics {
     /// Vocabulary: Total unique words encountered
     ///
@@ -90,6 +126,26 @@ pub struct VaamMetrics {
     /// palindrome). This measures higher-order linguistic understanding beyond basic
     /// vocabulary.
     pub literary_device_usage: HashMap<String, usize>,
+
+    /// Subject mastery: Progress per NPC scenario subject
+    ///
+    /// Tracks repeated success on language subjects such as "simple-past", "negation",
+    /// or "tone". Each successful quest completion or effective cast on a subject
+    /// increments its counter, showing growing pragmatic competence.
+    pub subject_mastery: HashMap<String, u32>,
+
+    /// Temporal evidence series for institutional dashboards and psychometric reports.
+    #[serde(default)]
+    pub telemetry: crate::components::TelemetrySeries,
+
+    /// CCSS standard coverage: counts of demonstrated exposures per standard code.
+    #[serde(default)]
+    pub ccss_coverage: HashMap<String, u32>,
+
+    /// Rolling token window for HD-D / MTLD lexical diversity calculations.
+    /// Stores lowercased words in cast order; capped to `LEXICAL_DIVERSITY_WINDOW`.
+    #[serde(skip)]
+    pub token_window: Vec<String>,
 }
 
 impl VaamMetrics {
@@ -130,6 +186,137 @@ impl VaamMetrics {
     /// This tracks higher-order linguistic understanding beyond basic vocabulary.
     pub fn record_literary_device(&mut self, device: &str) {
         *self.literary_device_usage.entry(device.to_string()).or_insert(0) += 1;
+    }
+
+    /// Record progress on a language subject (NPC scenario training)
+    ///
+    /// Use this when a player completes a quest or successfully casts a word tied to a
+    /// subject such as "simple-past", "negation", or "tone".
+    pub fn record_subject_mastery(&mut self, subject: &str) {
+        if !subject.is_empty() {
+            *self.subject_mastery.entry(subject.to_string()).or_insert(0) += 1;
+        }
+    }
+
+    /// Append a telemetry event and recalculate all temporal metrics.
+    ///
+    /// This is the main entry point for stealth assessment evidence collection.
+    pub fn record_cast_telemetry(&mut self, event: crate::components::CastTelemetry) {
+        let word = event.word.clone();
+        self.telemetry.cast_log.push(event.clone());
+        self.telemetry.syntax_series.push(event.grades.syntax);
+        self.telemetry.semantics_series.push(event.grades.semantics);
+        self.telemetry.pragmatics_series.push(event.faces_resonance);
+
+        // Update rolling token window for lexical diversity.
+        self.token_window.push(word);
+        if self.token_window.len() > LEXICAL_DIVERSITY_WINDOW {
+            self.token_window.remove(0);
+        }
+
+        // Update CCSS coverage counts.
+        for tag in &event.ccss_tags {
+            *self.ccss_coverage.entry(tag.clone()).or_insert(0) += 1;
+        }
+
+        // Recalculate lexical diversity and syntactic complexity.
+        let snapshot = self.compute_lexical_diversity();
+        self.telemetry.lexical_diversity_series.push(snapshot);
+        self.telemetry.syntactic_complexity_series.push(self.compute_syntactic_complexity_ratio());
+    }
+
+    /// Compute HD-D and MTLD over the rolling token window.
+    fn compute_lexical_diversity(&self) -> crate::components::LexicalDiversitySnapshot {
+        let tokens = &self.token_window;
+        let token_count = tokens.len() as u32;
+        if token_count == 0 {
+            return crate::components::LexicalDiversitySnapshot::default();
+        }
+
+        // Frequency map over the window.
+        let mut freq: HashMap<String, u32> = HashMap::new();
+        for token in tokens {
+            *freq.entry(token.clone()).or_insert(0) += 1;
+        }
+
+        let hd_d = Self::compute_hd_d(tokens, &freq);
+        let mtld = Self::compute_mtld(tokens);
+
+        crate::components::LexicalDiversitySnapshot { hd_d, mtld, token_count }
+    }
+
+    /// Hypergeometric Distribution D (HD-D).
+    ///
+    /// For each word type in the window, computes the probability that a random sample of
+    /// `sample_size` tokens contains *at least one* occurrence of that type. The HD-D score
+    /// is the average of these probabilities across all types, which mitigates text-length
+    /// bias better than raw TTR.
+    fn compute_hd_d(tokens: &[String], freq: &HashMap<String, u32>) -> f32 {
+        let n = tokens.len() as u32;
+        if n == 0 {
+            return 0.0;
+        }
+        let sample_size = (HD_D_SAMPLE_SIZE as u32).min(n);
+
+        let mut sum = 0.0f64;
+        for count in freq.values() {
+            let count = *count as u32;
+            // Probability of drawing zero of this type in a sample of size `sample_size`.
+            let prob_zero = hypergeometric_prob_zero(n, count, sample_size);
+            // We want probability of at least one.
+            sum += 1.0 - prob_zero;
+        }
+
+        let types = freq.len() as f64;
+        if types > 0.0 {
+            (sum / types) as f32
+        } else {
+            0.0
+        }
+    }
+
+    /// Measure of Textual Lexical Diversity (MTLD) using a factor-size procedure.
+    ///
+    /// Iterates over the token stream, accumulating tokens into factors of `MTLD_FACTOR_SIZE`
+    /// unique types. The MTLD is the average number of tokens required to reach each factor.
+    fn compute_mtld(tokens: &[String]) -> f32 {
+        if tokens.len() < MTLD_FACTOR_SIZE {
+            return 0.0;
+        }
+
+        let mut total_factors = 0usize;
+        let mut total_tokens_in_factors = 0usize;
+        let mut idx = 0usize;
+
+        while idx < tokens.len() {
+            let mut seen = std::collections::HashSet::new();
+            let mut factor_tokens = 0usize;
+            while seen.len() < MTLD_FACTOR_SIZE && idx < tokens.len() {
+                seen.insert(tokens[idx].clone());
+                factor_tokens += 1;
+                idx += 1;
+            }
+            if seen.len() >= MTLD_FACTOR_SIZE {
+                total_factors += 1;
+                total_tokens_in_factors += factor_tokens;
+            }
+        }
+
+        if total_factors > 0 {
+            (total_tokens_in_factors as f32) / (total_factors as f32)
+        } else {
+            0.0
+        }
+    }
+
+    /// Syntactic complexity ratio: combo casts / total casts.
+    fn compute_syntactic_complexity_ratio(&self) -> f32 {
+        let total = self.telemetry.cast_log.len() as f32;
+        if total == 0.0 {
+            return 0.0;
+        }
+        let combos = self.telemetry.cast_log.iter().filter(|e| e.combo).count() as f32;
+        combos / total
     }
 
     /// Calculate overall VAAM score (0.0 to 1.0)
@@ -357,6 +544,7 @@ pub struct BattleResult {
     pub is_effective: bool,
     pub is_counter: bool, // High distance = antonym/counter
     pub is_synonym: bool, // Low distance = synonym/heavy attack
+    pub grades: GradeScores,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -370,6 +558,7 @@ pub fn play_battle_card(
     state: &State<GameState>,
     active_face: Option<&ActiveFace>,
     mut vaam_metrics: Option<&mut VaamMetrics>,
+    slime_level: &mut SlimeLevel,
 ) -> BattleResult {
     let lower_typo = session.typo_word.to_lowercase();
     let lower_played = played_word.to_lowercase();
@@ -379,8 +568,18 @@ pub fn play_battle_card(
     let mut is_counter = false;
     let mut is_synonym = false;
 
+    // Grade-tracking state.
+    let mut semantic_distance_value: Option<f32> = None;
+    let mut typo_pos: Option<String> = None;
+    let mut played_pos: Option<String> = None;
+    let mut contextual_resonance: Option<f32> = None;
+    let mut cast_device: Option<String> = None;
+
     if let (Some(typo_stats), Some(played_stats)) = (db.words.get(&lower_typo), db.words.get(&lower_played)) {
         let distance = semantic_distance(typo_stats, played_stats);
+        semantic_distance_value = Some(distance);
+        typo_pos = Some(typo_stats.part_of_speech.to_lowercase());
+        played_pos = Some(played_stats.part_of_speech.to_lowercase());
 
         // Wand Duel: High distance = antonym/counter, Low distance = synonym/heavy attack
         if distance > 4.0 {
@@ -400,17 +599,16 @@ pub fn play_battle_card(
         }
 
         // Pillar 3: Syntax Spell Crafting - Apply part-of-speech multipliers
-        let played_pos = played_stats.part_of_speech.to_lowercase();
-        match played_pos.as_str() {
-            "noun" => {
+        match played_pos.as_deref() {
+            Some("noun") => {
                 damage_multiplier *= NOUN_SUMMON_MULTIPLIER;
                 info!("Noun: Summon/Target base damage");
             }
-            "adjective" => {
+            Some("adjective") => {
                 damage_multiplier *= ADJECTIVE_AURA_MULTIPLIER;
                 info!("Adjective: Aura/Element multiplier applied");
             }
-            "verb" => {
+            Some("verb") => {
                 damage_multiplier *= VERB_ACTION_MULTIPLIER;
                 info!("Verb: Action multiplier applied");
             }
@@ -428,6 +626,7 @@ pub fn play_battle_card(
         if is_oxymoron(&session.typo_word, played_word, db) {
             damage_multiplier *= OXYMORON_ARMOR_PIERCING;
             info!("OXYMORON! Armor piercing applied (2.0x)");
+            cast_device = Some("oxymoron".to_string());
             if let Some(ref mut metrics) = vaam_metrics {
                 metrics.record_literary_device("oxymoron");
             }
@@ -439,6 +638,7 @@ pub fn play_battle_card(
             info!("HYPERBOLE! Overcharge applied (3.0x) - potential recoil");
             // Hyperbole recoil: player takes damage
             session.player_health -= HYPERBOLE_RECOIL_DAMAGE;
+            cast_device = Some("hyperbole".to_string());
             if let Some(ref mut metrics) = vaam_metrics {
                 metrics.record_literary_device("hyperbole");
             }
@@ -450,31 +650,39 @@ pub fn play_battle_card(
             // Palindromes reflect damage back to enemy
             let reflected_damage = (base_damage * damage_multiplier * PALINDROME_REFLECTION_PERCENT) as i32;
             session.typo_health -= reflected_damage;
+            cast_device = Some("palindrome".to_string());
             if let Some(ref mut metrics) = vaam_metrics {
                 metrics.record_literary_device("palindrome");
             }
         }
     }
 
-    // Pillar 2: Apply FACES emotional modifiers
+    // Pillar 2: Apply FACES emotional resonance.
+    // The word's intrinsic FACES is compared to the Slime's contextual FACES.
+    // High alignment = resonant cast (bonus damage). Low alignment = dissonant cast (penalty).
     if let Some(face) = active_face {
-        match face.face {
-            SlimeFace::Fierce => {
-                damage_multiplier *= 1.2; // High damage/intensity
-                info!("Fierce Face: Damage increased by 20%");
+        if let Some(entry) = spellbook.entries.iter().find(|e| e.word == lower_played) {
+            if let Some(intrinsic_faces) = entry.faces {
+                let resonance = compute_resonance(intrinsic_faces.0, face.faces);
+                contextual_resonance = Some(resonance);
+                let res_mult = resonance_multiplier(resonance);
+                damage_multiplier *= res_mult;
+                info!("FACES resonance: {:.2} → multiplier {:.2}", resonance, res_mult);
+            } else {
+                // Word has no cached FACES; fall back to nearest preset modifier.
+                let preset = nearest_slime_face_preset(face.faces);
+                let preset_mult = match preset {
+                    SlimeFace::Fierce => 1.2,
+                    SlimeFace::Joyful => 1.1,
+                    SlimeFace::Calm => 1.0,
+                    SlimeFace::Angry => 1.3,
+                };
+                damage_multiplier *= preset_mult;
+                info!("No intrinsic FACES for '{}'; using preset {:?} modifier {:.2}", played_word, preset, preset_mult);
             }
-            SlimeFace::Joyful => {
-                damage_multiplier *= 1.1; // Slight boost, potential healing
-                info!("Joyful Face: Damage increased by 10%");
-            }
-            SlimeFace::Calm => {
-                damage_multiplier *= 1.0; // Neutral, precise
-                info!("Calm Face: Standard damage");
-            }
-            SlimeFace::Angry => {
-                damage_multiplier *= 1.3; // High damage, potential recoil
-                info!("Angry Face: Damage increased by 30%");
-            }
+        } else {
+            // Word not in spellbook: neutral FACES contribution.
+            info!("Word '{}' not in SpellBook; neutral FACES modifier", played_word);
         }
     }
 
@@ -494,6 +702,11 @@ pub fn play_battle_card(
                 played_word, final_damage, session.typo_word, session.typo_health, TYPO_MAX_HEALTH);
         }
         spellbook.upgrade_mastery(played_word, MasteryLevel::Owned);
+
+        // Award card XP and global Slime XP for effective casts.
+        let xp_amount = (final_damage.max(1) as u32) + 2;
+        spellbook.add_card_xp(played_word, xp_amount);
+        slime_level.add_xp(xp_amount);
 
         // Record VAAM metrics for successful word usage
         if let Some(ref mut metrics) = vaam_metrics {
@@ -520,10 +733,54 @@ pub fn play_battle_card(
         next_state.set(GameState::Questing);
     }
 
+    // Compute three-axis grades for this cast.
+    let syntax_score = match (typo_pos.as_deref(), played_pos.as_deref()) {
+        (Some(t), Some(p)) if t == p => 0.7, // same POS
+        (Some("noun"), Some("verb")) | (Some("verb"), Some("noun")) => 1.0, // complementary
+        (Some("adjective"), Some("noun")) | (Some("noun"), Some("adjective")) => 1.0,
+        (Some(_), Some(_)) => 0.4,
+        _ => 0.0,
+    };
+
+    let semantics_score = match semantic_distance_value {
+        Some(d) if d < 2.0 => 1.0,  // synonym
+        Some(d) if d > 4.0 => 0.9,  // strong antonym counter
+        Some(_) => 0.5,             // mid-range
+        None => 0.0,
+    };
+
+    let pragmatics_score = contextual_resonance.unwrap_or(0.0);
+
+    let grades = GradeScores {
+        syntax: syntax_score,
+        semantics: semantics_score,
+        pragmatics: pragmatics_score,
+    };
+
+    info!("Grade scores — syntax: {:.2}, semantics: {:.2}, pragmatics: {:.2}", grades.syntax, grades.semantics, grades.pragmatics);
+
+    // Record stealth-assessment telemetry for this cast.
+    if let Some(ref mut metrics) = vaam_metrics {
+        let event = CastTelemetry {
+            word: lower_played,
+            pos: played_pos.clone(),
+            grades,
+            faces_resonance: contextual_resonance.unwrap_or(0.0),
+            effective: is_effective,
+            combo: cast_device.is_some(),
+            device: cast_device.clone(),
+            ccss_tags: Vec::new(),
+            subject: None,
+            sequence: metrics.telemetry.cast_log.len() as u64,
+        };
+        metrics.record_cast_telemetry(event);
+    }
+
     BattleResult {
         is_effective,
         is_counter,
         is_synonym,
+        grades,
     }
 }
 
@@ -542,6 +799,7 @@ pub fn cast_sentence(
     state: &State<GameState>,
     active_face: Option<&ActiveFace>,
     mut vaam_metrics: Option<&mut VaamMetrics>,
+    slime_level: &mut SlimeLevel,
 ) {
     let plot = match plot {
         Some(p) => p,
@@ -564,6 +822,7 @@ pub fn cast_sentence(
     let mut recoil = 0;
     let mut reflection = 0;
     let mut logged_words: Vec<String> = Vec::new();
+    let mut sentence_devices: Vec<String> = Vec::new();
 
     for word in &plot.cards {
         let lower_word = word.to_lowercase();
@@ -588,6 +847,7 @@ pub fn cast_sentence(
 
         if is_oxymoron(&session.typo_word, word, db) {
             sentence_multiplier *= OXYMORON_ARMOR_PIERCING;
+            sentence_devices.push("oxymoron".to_string());
             if let Some(ref mut metrics) = vaam_metrics {
                 metrics.record_literary_device("oxymoron");
             }
@@ -595,12 +855,14 @@ pub fn cast_sentence(
         if is_hyperbole(word, db) {
             sentence_multiplier *= HYPERBOLE_OVERCHARGE;
             recoil += HYPERBOLE_RECOIL_DAMAGE;
+            sentence_devices.push("hyperbole".to_string());
             if let Some(ref mut metrics) = vaam_metrics {
                 metrics.record_literary_device("hyperbole");
             }
         }
         if is_palindrome(word) {
             reflection += (BASE_DAMAGE * card_multiplier * PALINDROME_REFLECTION_PERCENT) as i32;
+            sentence_devices.push("palindrome".to_string());
             if let Some(ref mut metrics) = vaam_metrics {
                 metrics.record_literary_device("palindrome");
             }
@@ -618,18 +880,40 @@ pub fn cast_sentence(
     if is_alliteration(&refs) {
         sentence_multiplier *= 1.2;
         info!("ALLITERATION! The verse flows with matching sounds (+20%)");
+        sentence_devices.push("alliteration".to_string());
         if let Some(ref mut metrics) = vaam_metrics {
             metrics.record_literary_device("alliteration");
         }
     }
 
-    // Apply FACES emotional stance once to the whole sentence.
+    // Apply FACES emotional resonance once to the whole sentence.
+    // The average resonance across all played words sets the sentence-level mood multiplier.
     if let Some(face) = active_face {
-        match face.face {
-            SlimeFace::Fierce => sentence_multiplier *= 1.2,
-            SlimeFace::Joyful => sentence_multiplier *= 1.1,
-            SlimeFace::Calm => sentence_multiplier *= 1.0,
-            SlimeFace::Angry => sentence_multiplier *= 1.3,
+        let mut total_resonance = 0.0;
+        let mut words_with_faces = 0usize;
+        for word in &plot.cards {
+            if let Some(entry) = spellbook.entries.iter().find(|e| e.word == word.to_lowercase()) {
+                if let Some(intrinsic_faces) = entry.faces {
+                    total_resonance += compute_resonance(intrinsic_faces.0, face.faces);
+                    words_with_faces += 1;
+                }
+            }
+        }
+        if words_with_faces > 0 {
+            let avg_resonance = total_resonance / words_with_faces as f32;
+            sentence_multiplier *= resonance_multiplier(avg_resonance);
+            info!("Sentence FACES resonance: {:.2}", avg_resonance);
+        } else {
+            // Fallback to nearest preset if no words have cached FACES.
+            let preset = nearest_slime_face_preset(face.faces);
+            let preset_mult = match preset {
+                SlimeFace::Fierce => 1.2,
+                SlimeFace::Joyful => 1.1,
+                SlimeFace::Calm => 1.0,
+                SlimeFace::Angry => 1.3,
+            };
+            sentence_multiplier *= preset_mult;
+            info!("No intrinsic FACES in sentence; using preset {:?} modifier {:.2}", preset, preset_mult);
         }
     }
 
@@ -639,6 +923,52 @@ pub fn cast_sentence(
 
     info!("CAST SENTENCE: '{}' deals {} damage. Typo health: {}/{}",
         plot.cards.join(" "), final_damage, session.typo_health, TYPO_MAX_HEALTH);
+
+    // Award card XP for each word in the sentence plus global Slime XP.
+    let sentence_xp = (final_damage.max(1) as u32) + 5;
+    let sentence_combo = !sentence_devices.is_empty();
+    for word in &plot.cards {
+        spellbook.add_card_xp(word, 3);
+    }
+    slime_level.add_xp(sentence_xp);
+
+    // Record stealth-assessment telemetry for each word in the sentence.
+    let avg_resonance = if let Some(face) = active_face {
+        let mut total = 0.0f32;
+        let mut count = 0usize;
+        for word in &plot.cards {
+            if let Some(entry) = spellbook.entries.iter().find(|e| e.word == word.to_lowercase()) {
+                if let Some(intrinsic_faces) = entry.faces {
+                    total += compute_resonance(intrinsic_faces.0, face.faces);
+                    count += 1;
+                }
+            }
+        }
+        if count > 0 { total / count as f32 } else { 0.0 }
+    } else {
+        0.0
+    };
+
+    if let Some(ref mut metrics) = vaam_metrics {
+        let mut seq = metrics.telemetry.cast_log.len() as u64;
+        for word in &plot.cards {
+            let pos = db.words.get(&word.to_lowercase()).map(|s| s.part_of_speech.to_lowercase());
+            let event = CastTelemetry {
+                word: word.to_lowercase(),
+                pos,
+                grades: GradeScores::default(),
+                faces_resonance: avg_resonance,
+                effective: true,
+                combo: sentence_combo,
+                device: sentence_devices.first().cloned(),
+                ccss_tags: Vec::new(),
+                subject: None,
+                sequence: seq,
+            };
+            seq += 1;
+            metrics.record_cast_telemetry(event);
+        }
+    }
 
     plot.cards.clear();
 
@@ -714,10 +1044,154 @@ mod tests {
             is_effective: false,
             is_counter: false,
             is_synonym: false,
+            grades: GradeScores::default(),
         };
         assert!(!result.is_effective);
         assert!(!result.is_counter);
         assert!(!result.is_synonym);
+        assert_eq!(result.grades, GradeScores::default());
+    }
+
+    #[test]
+    fn nearest_preset_round_trips_slime_face_presets() {
+        use crate::components::SlimeFace;
+
+        assert_eq!(nearest_slime_face_preset(SlimeFace::Fierce.to_faces_state()), SlimeFace::Fierce);
+        assert_eq!(nearest_slime_face_preset(SlimeFace::Joyful.to_faces_state()), SlimeFace::Joyful);
+        assert_eq!(nearest_slime_face_preset(SlimeFace::Calm.to_faces_state()), SlimeFace::Calm);
+        assert_eq!(nearest_slime_face_preset(SlimeFace::Angry.to_faces_state()), SlimeFace::Angry);
+    }
+
+    #[test]
+    fn identical_faces_states_have_perfect_resonance() {
+        let state = FacesState::default();
+        let resonance = compute_resonance(state, state);
+        assert!((resonance - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn orthogonal_faces_states_have_low_resonance() {
+        use faces_protocol::{Action, Aura, Container, Focus};
+
+        let calm = FacesState::new(Aura::CALM, Container::Neutral, Focus::Neutral, Action::Thoughtful);
+        let fierce = FacesState::new(Aura::URGENT, Container::Sharp, Focus::Intense, Action::Assertive);
+        let resonance = compute_resonance(calm, fierce);
+        assert!(resonance < 0.5);
+    }
+
+    #[test]
+    fn resonance_multiplier_scales_with_alignment() {
+        assert_eq!(resonance_multiplier(1.0), 1.5);
+        assert_eq!(resonance_multiplier(0.6), 1.1);
+        assert_eq!(resonance_multiplier(0.3), 1.0);
+        assert_eq!(resonance_multiplier(0.0), 0.7);
+    }
+
+    #[test]
+    fn play_battle_card_returns_three_axis_grades() {
+        let db = GameDatabase::load_from_embedded().unwrap();
+        let mut session = BattleSession {
+            typo_word: "abandoned".to_string(),
+            typo_health: 100,
+            player_health: 100,
+            failed_word: None,
+        };
+        let mut spellbook = SpellBook::default();
+        spellbook.record_encounter("left", Channel::Mind, None, None, None, None);
+        let mut next_state = NextState::default();
+        let sheet = CharacterSheet::default();
+        let state = State::new(GameState::Battling);
+        let mut vaam = VaamMetrics::default();
+        let active_face = ActiveFace {
+            face: SlimeFace::Angry,
+            faces: SlimeFace::Angry.to_faces_state(),
+        };
+
+        let mut slime_level = SlimeLevel::default();
+        let result = play_battle_card("left", &mut session, &db, &mut spellbook, &mut next_state, &sheet, &state, Some(&active_face), Some(&mut vaam), &mut slime_level);
+
+        assert!(result.grades.syntax >= 0.0 && result.grades.syntax <= 1.0);
+        assert!(result.grades.semantics >= 0.0 && result.grades.semantics <= 1.0);
+        assert!(result.grades.pragmatics >= 0.0 && result.grades.pragmatics <= 1.0);
+        assert!(slime_level.xp > 0, "slime should gain XP from an effective cast");
+        let entry = spellbook.entries.iter().find(|e| e.word == "left").unwrap();
+        assert!(entry.card_xp > 0, "word card should gain XP from an effective cast");
+    }
+
+    #[test]
+    fn hypergeometric_prob_zero_is_one_when_no_successes() {
+        assert!((hypergeometric_prob_zero(10, 0, 5) - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn hypergeometric_prob_zero_decreases_with_more_successes() {
+        let p1 = hypergeometric_prob_zero(20, 2, 5);
+        let p2 = hypergeometric_prob_zero(20, 10, 5);
+        assert!(p2 < p1, "higher success count should reduce zero-draw probability");
+    }
+
+    #[test]
+    fn mtld_is_zero_for_short_input() {
+        let tokens: Vec<String> = vec!["a".to_string(), "b".to_string()];
+        assert_eq!(VaamMetrics::compute_mtld(&tokens), 0.0);
+    }
+
+    #[test]
+    fn mtld_grows_with_repeated_diverse_tokens() {
+        // 10 unique tokens should form exactly one factor of size 10.
+        let tokens: Vec<String> = (0..10).map(|i| format!("word{}", i)).collect();
+        let mtld = VaamMetrics::compute_mtld(&tokens);
+        assert_eq!(mtld, 10.0, "10 unique tokens should require 10 tokens per factor");
+    }
+
+    #[test]
+    fn hd_d_is_perfect_when_population_is_fully_sampled() {
+        // If every token in the population is unique, drawing the full population
+        // guarantees at least one of every type, so HD-D equals 1.0.
+        let tokens: Vec<String> = (0..20).map(|i| format!("word{}", i)).collect();
+        let mut freq = HashMap::new();
+        for i in 0..20 {
+            freq.insert(format!("word{}", i), 1);
+        }
+        let hd_d = VaamMetrics::compute_hd_d(&tokens, &freq);
+        assert!((hd_d - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn hd_d_matches_known_hypergeometric_property() {
+        // Population 100, one rare type appearing once, sample 42.
+        // P(at least one) = 1 - C(99, 42) / C(100, 42) = 1 - 58/100 = 0.42.
+        let tokens: Vec<String> = (0..100).map(|i| if i == 0 { "rare".to_string() } else { "common".to_string() }).collect();
+        let mut freq = HashMap::new();
+        freq.insert("rare".to_string(), 1);
+        freq.insert("common".to_string(), 99);
+        let hd_d = VaamMetrics::compute_hd_d(&tokens, &freq);
+        // Two types. Rare type ~0.42, common type ~1.0. Average ~0.71.
+        assert!(hd_d > 0.6 && hd_d < 0.85, "HD-D should be the average of the two type probabilities");
+    }
+
+    #[test]
+    fn cast_telemetry_updates_series() {
+        let mut vaam = VaamMetrics::default();
+        let event = CastTelemetry {
+            word: "brave".to_string(),
+            pos: Some("adjective".to_string()),
+            grades: GradeScores { syntax: 0.8, semantics: 0.9, pragmatics: 0.7 },
+            faces_resonance: 0.75,
+            effective: true,
+            combo: true,
+            device: Some("echo".to_string()),
+            ccss_tags: vec!["L.9-10.5".to_string()],
+            subject: Some("tone".to_string()),
+            sequence: 1,
+        };
+        vaam.record_cast_telemetry(event);
+
+        assert_eq!(vaam.telemetry.cast_log.len(), 1);
+        assert_eq!(vaam.telemetry.syntax_series, vec![0.8]);
+        assert_eq!(vaam.telemetry.pragmatics_series, vec![0.75]);
+        assert_eq!(vaam.telemetry.syntactic_complexity_series, vec![1.0]);
+        assert_eq!(vaam.ccss_coverage.get("L.9-10.5"), Some(&1));
     }
 }
 
@@ -732,6 +1206,11 @@ impl Plugin for BattlePlugin {
 
         #[cfg(not(feature = "flat2d"))]
         app.add_systems(Update, handle_critical_hit_effects);
+
+        #[cfg(feature = "flat2d")]
+        app.add_systems(Update, handle_critical_hit_effects_2d);
+
+        app.add_systems(Update, play_battle_sfx);
 
         #[cfg(not(feature = "xr"))]
         app.add_systems(OnEnter(GameState::Battling), (spawn_battle_ui_2d, set_pet_battle_state))
@@ -787,6 +1266,57 @@ pub fn handle_critical_hit_effects(
                     velocity: Vec3::new(vx, vy, vz),
                     timer: 1.5,
                 }
+            ));
+        }
+    }
+}
+
+pub fn play_battle_sfx(
+    trigger_query: Query<Entity, With<CriticalHitTrigger>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    for _ in trigger_query.iter() {
+        commands.spawn((
+            AudioPlayer::<AudioSource>(asset_server.load(crate::asset_catalog::SOUND_ATTUNE)),
+            PlaybackSettings::DESPAWN,
+        ));
+    }
+}
+
+#[cfg(feature = "flat2d")]
+pub fn handle_critical_hit_effects_2d(
+    trigger_query: Query<Entity, With<CriticalHitTrigger>>,
+    mut commands: Commands,
+    camera_query: Query<(Entity, &Transform), With<Camera2d>>,
+) {
+    for trigger_entity in trigger_query.iter() {
+        commands.entity(trigger_entity).despawn();
+
+        for (entity, tf) in &camera_query {
+            commands.entity(entity).insert(crate::render::ScreenShake {
+                timer: 0.3,
+                intensity: 8.0,
+                base_translation: tf.translation,
+            });
+        }
+
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        for _ in 0..24 {
+            let vx = rng.gen_range(-120.0..120.0);
+            let vy = rng.gen_range(-120.0..120.0);
+            commands.spawn((
+                Sprite {
+                    color: Color::srgb(rng.gen(), rng.gen(), 1.0),
+                    custom_size: Some(Vec2::splat(rng.gen_range(4.0..10.0))),
+                    ..default()
+                },
+                Transform::from_xyz(0.0, 0.0, 10.0),
+                crate::render::BurstParticle {
+                    velocity: Vec2::new(vx, vy),
+                    timer: rng.gen_range(0.4..0.8),
+                },
             ));
         }
     }
@@ -915,7 +1445,7 @@ fn spawn_battle_ui_2d(
     session: Res<BattleSession>,
 ) {
     let instruction_text = format!("WILD TYPO: {}", session.typo_word.to_uppercase());
-    
+
     commands.spawn((
         BattleUiMarker,
         Node {
@@ -966,9 +1496,64 @@ fn spawn_battle_ui_2d(
             TextColor(Color::srgb(0.6, 0.8, 1.0)),
         ));
 
+        // FACES emotion buttons
+        parent.spawn((
+            Node {
+                margin: UiRect::top(Val::Px(12.0)),
+                justify_content: JustifyContent::SpaceEvenly,
+                width: Val::Px(360.0),
+                ..default()
+            },
+        )).with_children(|face_parent| {
+            let faces = [SlimeFace::Fierce, SlimeFace::Joyful, SlimeFace::Calm, SlimeFace::Angry];
+            for face in faces {
+                face_parent.spawn((
+                    Button,
+                    FaceButton { face },
+                    Node {
+                        width: Val::Px(80.0),
+                        height: Val::Px(40.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.3, 0.5, 0.3)),
+                    BattleUiMarker,
+                )).with_children(|btn| {
+                    btn.spawn((
+                        Text::new(format!("{:?}", face)),
+                        TextFont { font_size: 14.0, ..default() },
+                        TextColor(Color::WHITE),
+                    ));
+                });
+            }
+        });
+
+        // Clear Plot button
+        parent.spawn((
+            Button,
+            crate::components::ClearPlotButton,
+            BattleUiMarker,
+            Node {
+                margin: UiRect::top(Val::Px(10.0)),
+                width: Val::Px(120.0),
+                height: Val::Px(32.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgb(0.4, 0.2, 0.2)),
+        )).with_children(|btn| {
+            btn.spawn((
+                Text::new("Clear Plot"),
+                TextFont { font_size: 14.0, ..default() },
+                TextColor(Color::WHITE),
+            ));
+        });
+
         // Hint line
         parent.spawn((
-            Text::new("Weak to antonyms (far meaning) and verbs."),
+            Text::new("Click cards to build a 3-word sentence, then Cast Spell."),
             TextFont { font_size: 18.0, ..default() },
             TextColor(Color::srgb(0.7, 0.7, 0.7)),
         ));
@@ -1239,7 +1824,8 @@ pub fn handle_face_button_click(
     for (interaction, face_button) in interaction_query.iter_mut() {
         if *interaction == Interaction::Pressed {
             active_face.face = face_button.face;
-            info!("Face changed to: {:?}", face_button.face);
+            active_face.faces = face_button.face.to_faces_state();
+            info!("Face changed to: {:?} ({})", face_button.face, active_face.faces);
         }
     }
 }
@@ -1261,10 +1847,10 @@ pub fn handle_cast_spell_click(
                     let (damage, math) = calculate_spell_damage(
                         word,
                         &battle_session.prompt_word,
-                        active_face.face,
+                        active_face.faces,
                     );
                     battle_session.dummy_hp -= damage;
-                    info!("Spell cast: {} with face {:?} - Damage: {} ({})", word, active_face.face, damage, math);
+                    info!("Spell cast: {} with faces {} - Damage: {} ({})", word, active_face.faces, damage, math);
                 }
             }
         }
@@ -1297,15 +1883,57 @@ pub fn is_antonym(word1: &str, word2: &str) -> bool {
     calculate_synonym_distance(word1, word2) > 4.0
 }
 
-/// Calculate spell damage with face modifiers
+/// Compute FACES resonance between a word's intrinsic FACES and the Slime's
+/// contextual FACES.
+///
+/// Returns a score from 0.0 (complete dissonance) to 1.0 (perfect resonance).
+/// The calculation uses byte-level comparison: exact matches on the structured
+/// bytes (container, focus, action) score highest; the aura byte uses inverse
+/// distance on the ANSI-256 color wheel.
+pub fn compute_resonance(intrinsic: FacesState, contextual: FacesState) -> f32 {
+    let ib = intrinsic.to_bytes();
+    let cb = contextual.to_bytes();
+
+    // Aura (byte 0): color distance on a 0-255 scale, inverted.
+    let aura_distance = (ib[0] as f32 - cb[0] as f32).abs();
+    let aura_score = 1.0 - (aura_distance / 255.0);
+
+    // Container (byte 1), Focus (byte 2), Action (byte 3): exact matches.
+    let container_score = if ib[1] == cb[1] { 1.0 } else { 0.0 };
+    let focus_score = if ib[2] == cb[2] { 1.0 } else { 0.0 };
+    let action_score = if ib[3] == cb[3] { 1.0 } else { 0.0 };
+
+    // Weighted blend. Aura provides subtle shading; container/focus/action
+    // carry the grammatical-emotional shape of the word.
+    aura_score * 0.20 + container_score * 0.30 + focus_score * 0.25 + action_score * 0.25
+}
+
+/// Map a resonance score to a damage multiplier.
+pub fn resonance_multiplier(resonance: f32) -> f32 {
+    if resonance > 0.85 {
+        1.5 // resonant cast
+    } else if resonance > 0.55 {
+        1.1 // partial alignment
+    } else if resonance > 0.25 {
+        1.0 // neutral
+    } else {
+        0.7 // dissonant cast
+    }
+}
+
+/// Calculate spell damage with face modifiers.
+///
+/// The face modifier is derived from the Slime's contextual FACES register.
+/// In the 2D demo this maps back to the nearest preset; in the full game it
+/// will be computed from byte-level resonance.
 pub fn calculate_spell_damage(
     played_word: &str,
     prompt_word: &str,
-    face: SlimeFace,
+    faces: FacesState,
 ) -> (i32, String) {
     let base_damage = 25;
     let distance = calculate_synonym_distance(played_word, prompt_word);
-    
+
     let (multiplier, _action_type) = if is_synonym(played_word, prompt_word) {
         (2.0, BattleActionType::SynonymAttack)
     } else if is_antonym(played_word, prompt_word) {
@@ -1315,6 +1943,7 @@ pub fn calculate_spell_damage(
         (1.0, BattleActionType::NormalAttack)
     };
 
+    let face = nearest_slime_face_preset(faces);
     let face_modifier = match face {
         SlimeFace::Fierce => 1.2,
         SlimeFace::Joyful => 1.1,
@@ -1323,13 +1952,42 @@ pub fn calculate_spell_damage(
     };
 
     let final_damage = (base_damage as f32 * multiplier * face_modifier) as i32;
-    
+
     let math_breakdown = format!(
-        "Base: {} × DistMult: {:.2} × FaceMod: {:.2} = {}",
-        base_damage, multiplier, face_modifier, final_damage
+        "Base: {} × DistMult: {:.2} × FaceMod({:?}): {:.2} = {}",
+        base_damage, multiplier, face, face_modifier, final_damage
     );
 
     (final_damage, math_breakdown)
+}
+
+/// Maps a full FACES register to the nearest 2D demo preset.
+///
+/// This is a temporary compatibility helper. The full game will use the raw
+/// FACES bytes for resonance instead of collapsing back to a preset.
+pub fn nearest_slime_face_preset(faces: FacesState) -> SlimeFace {
+    use faces_protocol::{Action, Aura, Container, Focus};
+
+    match (faces.aura, faces.container, faces.focus, faces.action) {
+        // Calm preset: blue/calm aura, neutral boundary, neutral attention, thoughtful output.
+        (Aura::CALM, Container::Neutral, Focus::Neutral, Action::Thoughtful) => SlimeFace::Calm,
+        // Joyful preset: happy/yellow aura, fluid boundary, happy focus, playful output.
+        (Aura::HAPPY, Container::Fluid, Focus::Happy, Action::Playful) => SlimeFace::Joyful,
+        // Angry preset: urgent/red aura, sharp boundary, intense focus, assertive output.
+        (Aura::URGENT, Container::Sharp, Focus::Intense, Action::Assertive) => SlimeFace::Angry,
+        // Fierce preset: energetic/orange aura, sharp boundary, intense focus, assertive output.
+        (Aura::ENERGETIC, Container::Sharp, Focus::Intense, Action::Assertive) => SlimeFace::Fierce,
+        // Fallback: choose by aura temperature.
+        _ => {
+            let bytes = faces.to_bytes();
+            match bytes[0] {
+                0..=60 | 200..=220 => SlimeFace::Joyful, // warm yellow / bright
+                61..=140 => SlimeFace::Angry,            // warm red / urgent
+                141..=200 => SlimeFace::Calm,            // cool blue / calm
+                _ => SlimeFace::Fierce,                  // energetic / intense
+            }
+        }
+    }
 }
 
 /// Apply damage to target dummy (no longer needed with direct spell casting)

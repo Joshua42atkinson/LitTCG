@@ -186,6 +186,15 @@ pub fn companion_follow(
     }
 }
 
+pub fn companion_face_feedback(
+    active_face: Res<crate::components::ActiveFace>,
+    mut companion: Single<&mut Sprite, With<CompanionAvatar>>,
+) {
+    if active_face.is_changed() {
+        companion.color = active_face.face.color();
+    }
+}
+
 /// Cleanup the overworld scene when leaving Exploring.
 pub fn cleanup_overworld(
     mut commands: Commands,
@@ -284,6 +293,7 @@ impl Plugin for OverworldPlugin {
                 move_avatar,
                 clamp_avatar_to_bounds.after(move_avatar),
                 companion_follow.after(clamp_avatar_to_bounds),
+                companion_face_feedback.after(companion_follow),
                 update_overworld_camera.after(companion_follow),
                 handle_overworld_interactions,
            ).run_if(in_state(GameState::Exploring)))

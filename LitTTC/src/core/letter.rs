@@ -421,7 +421,7 @@ pub fn submit_spelling_word(
             faces_state: detected.state,
             pet_type: sheet.active_summon_class,
         });
-        spellbook.record_encounter(&word_lower, Channel::Mind, Some(element), Some(role), Some(stats));
+        spellbook.record_encounter(&word_lower, Channel::Mind, Some(element), Some(role), Some(stats), Some(crate::components::PetFacesState(detected.state)));
         demo.words_used += 1;
 
         spelling.word.clear();

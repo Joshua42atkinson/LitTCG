@@ -53,6 +53,21 @@ pub struct BurstParticle {
     pub timer: f32,
 }
 
+#[cfg(feature = "flat2d")]
+#[derive(Component)]
+pub struct ScreenShake {
+    pub timer: f32,
+    pub intensity: f32,
+    pub base_translation: Vec3,
+}
+
+#[cfg(feature = "flat2d")]
+#[derive(Component)]
+pub struct BurstParticle {
+    pub velocity: Vec2,
+    pub timer: f32,
+}
+
 #[cfg(not(feature = "flat2d"))]
 // Marker components for sub-parts of the pet
 #[derive(Component)]
@@ -659,6 +674,8 @@ impl Plugin for RenderPlugin {
            .add_systems(Update, (
                spawn_2d_pet_avatars,
                update_2d_pet_expressions,
+               apply_screen_shake_2d,
+               animate_burst_particles_2d,
            ));
     }
 }
@@ -786,6 +803,46 @@ fn animate_burst_particles(
         } else {
             tf.translation += burst.velocity * dt;
             burst.velocity *= 0.95; // drag
+        }
+    }
+}
+
+#[cfg(feature = "flat2d")]
+fn apply_screen_shake_2d(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut query: Query<(Entity, &mut Transform, &mut ScreenShake), With<Camera2d>>,
+) {
+    for (entity, mut tf, mut shake) in &mut query {
+        shake.timer -= time.delta_secs();
+        if shake.timer <= 0.0 {
+            tf.translation = shake.base_translation;
+            commands.entity(entity).remove::<ScreenShake>();
+        } else {
+            use rand::Rng;
+            let mut rng = rand::thread_rng();
+            let offset_x = rng.gen_range(-shake.intensity..shake.intensity);
+            let offset_y = rng.gen_range(-shake.intensity..shake.intensity);
+            tf.translation = shake.base_translation + Vec3::new(offset_x, offset_y, 0.0);
+        }
+    }
+}
+
+#[cfg(feature = "flat2d")]
+fn animate_burst_particles_2d(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut query: Query<(Entity, &mut Transform, &mut BurstParticle)>,
+) {
+    let dt = time.delta_secs();
+    for (entity, mut tf, mut burst) in &mut query {
+        burst.timer -= dt;
+        if burst.timer <= 0.0 {
+            commands.entity(entity).despawn();
+        } else {
+            tf.translation.x += burst.velocity.x * dt;
+            tf.translation.y += burst.velocity.y * dt;
+            burst.velocity *= 0.95;
         }
     }
 }

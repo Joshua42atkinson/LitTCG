@@ -101,15 +101,24 @@ pub fn keyboard_input(
 pub fn handle_hand_card_button_interactions(
     mut writer: MessageWriter<crate::commands::GameCommand>,
     hand: Res<Hand>,
+    state: Res<State<GameState>>,
     mut buttons: Query<(&Interaction, &crate::hud::HandCardUi), With<Button>>,
 ) {
     for (interaction, card_ui) in &mut buttons {
         if *interaction == Interaction::Pressed {
-            if card_ui.0 < hand.cards.len() {
-                writer.write(crate::commands::GameCommand::SelectCard(card_ui.0));
-                info!("Selected card index: {}", card_ui.0);
-            } else {
+            if card_ui.0 >= hand.cards.len() {
                 warn!("Hand card UI index {} out of bounds", card_ui.0);
+                continue;
+            }
+            match *state.get() {
+                GameState::Battling => {
+                    info!("Added card index {} to Plot", card_ui.0);
+                    writer.write(crate::commands::GameCommand::AddToPlot(card_ui.0));
+                }
+                _ => {
+                    writer.write(crate::commands::GameCommand::SelectCard(card_ui.0));
+                    info!("Selected card index: {}", card_ui.0);
+                }
             }
         }
     }
@@ -117,12 +126,21 @@ pub fn handle_hand_card_button_interactions(
 
 pub fn handle_play_card_button_interactions(
     mut writer: MessageWriter<crate::commands::GameCommand>,
+    state: Res<State<GameState>>,
     mut buttons: Query<&Interaction, With<crate::hud::PlayCardButton>>,
 ) {
     for interaction in &mut buttons {
         if *interaction == Interaction::Pressed {
-            info!("Play Card clicked!");
-            writer.write(crate::commands::GameCommand::PlayCard);
+            match *state.get() {
+                GameState::Battling => {
+                    info!("Cast Spell clicked!");
+                    writer.write(crate::commands::GameCommand::CastSentence);
+                }
+                _ => {
+                    info!("Play Card clicked!");
+                    writer.write(crate::commands::GameCommand::PlayCard);
+                }
+            }
         }
     }
 }
@@ -170,6 +188,42 @@ pub fn handle_skip_button_interactions(
                 GameState::Battling => { writer.write(crate::commands::GameCommand::FleeBattle); }
                 GameState::Questing => { writer.write(crate::commands::GameCommand::CancelQuest); }
                 _ => {}
+            }
+        }
+    }
+}
+
+pub fn handle_face_button_interactions(
+    mut writer: MessageWriter<crate::commands::GameCommand>,
+    state: Res<State<GameState>>,
+    mut buttons: Query<(&Interaction, &crate::components::FaceButton), With<Button>>,
+) {
+    for (interaction, face_button) in &mut buttons {
+        if *interaction == Interaction::Pressed {
+            if *state.get() == GameState::Battling {
+                writer.write(crate::commands::GameCommand::SetFace(format!("{:?}", face_button.face).to_lowercase()));
+                info!("Face button selected: {:?}", face_button.face);
+            }
+        }
+    }
+}
+
+pub fn handle_clear_plot_button_interactions(
+    mut writer: MessageWriter<crate::commands::GameCommand>,
+    state: Res<State<GameState>>,
+    plot: Option<Res<crate::battle::Plot>>,
+    mut buttons: Query<&Interaction, With<crate::components::ClearPlotButton>>,
+) {
+    for interaction in &mut buttons {
+        if *interaction == Interaction::Pressed {
+            if *state.get() == GameState::Battling {
+                if let Some(ref p) = plot {
+                    if !p.cards.is_empty() {
+                        let idx = p.cards.len() - 1;
+                        writer.write(crate::commands::GameCommand::RemoveFromPlot(idx));
+                        info!("Clear Plot clicked: removing index {}", idx);
+                    }
+                }
             }
         }
     }
@@ -260,9 +314,15 @@ pub fn keyboard_battle_interaction(
     keys: Res<ButtonInput<KeyCode>>,
     hand: Res<Hand>,
     session: Option<Res<crate::battle::BattleSession>>,
+    plot: Option<Res<crate::battle::Plot>>,
     mut writer: MessageWriter<crate::commands::GameCommand>,
 ) {
     if session.is_none() {
+        return;
+    }
+
+    if keys.just_pressed(KeyCode::Enter) {
+        writer.write(crate::commands::GameCommand::CastSentence);
         return;
     }
 
@@ -274,7 +334,15 @@ pub fn keyboard_battle_interaction(
 
     if let Some(idx) = pressed_idx {
         if idx < hand.cards.len() {
-            writer.write(crate::commands::GameCommand::PlayBattleCard(idx));
+            if let Some(ref p) = plot {
+                if p.cards.len() < p.max_size {
+                    writer.write(crate::commands::GameCommand::AddToPlot(idx));
+                } else {
+                    warn!("Plot is full (max {} cards); press Enter to cast", p.max_size);
+                }
+            } else {
+                writer.write(crate::commands::GameCommand::PlayBattleCard(idx));
+            }
         }
     }
 }

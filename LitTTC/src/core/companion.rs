@@ -36,7 +36,10 @@ impl Plugin for CompanionPlugin {
 #[cfg(not(feature = "flat2d"))]
 fn build_3d_systems(app: &mut App) {
     app.add_systems(OnEnter(GameState::Playing), spawn_companion)
-       .add_systems(Update, follow_camera.run_if(in_state(GameState::Playing)));
+       .add_systems(Update, (
+            follow_camera,
+            update_companion_face_label,
+       ).run_if(in_state(GameState::Playing)));
 }
 
 #[cfg(not(feature = "flat2d"))]
@@ -142,5 +145,25 @@ fn follow_camera(
     let alpha = (dt * COMPANION_FOLLOW_SPEED).min(1.0);
     for mut tf in companion.iter_mut() {
         tf.translation = tf.translation.lerp(target, alpha);
+    }
+}
+
+#[cfg(not(feature = "flat2d"))]
+fn update_companion_face_label(
+    active_face: Res<crate::components::ActiveFace>,
+    companion_query: Query<&PetAvatar, With<Companion>>,
+    mut label_query: Query<(&PetNameLabel, &mut Text)>,
+) {
+    if !active_face.is_changed() {
+        return;
+    }
+    let Ok(avatar) = companion_query.single() else { return };
+    for (label, mut text) in label_query.iter_mut() {
+        if label.pet == Entity::PLACEHOLDER {
+            continue;
+        }
+        if let Ok(_) = companion_query.get(label.pet) {
+            text.0 = format!("{} | {:?} | Active Face: {:?}", avatar.word, avatar.pet_type, active_face.face);
+        }
     }
 }

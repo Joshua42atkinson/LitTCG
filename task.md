@@ -375,30 +375,30 @@ Added unit and integration tests across the engine. Test count: 39 → 128 (48 u
 - [x] Add unit test verifying coverage increments on tagged interactions.
 
 ### 9.4 Evaluate — Test and commit
-- [/] `cargo test` passes.
-- [/] Commit: "Phase 9 complete: CCSS ELA metadata and standard coverage tracking"
+- [x] `cargo test` passes.
+- [x] Commit: "Phase 9 complete: CCSS ELA metadata and standard coverage tracking"
 
 ## Phase 10: Institutional Telemetry Serialization
 
 ### 10.1 Design — JSON schema
-- [ ] Define standardized array field names for `CharacterSheet` and `VaamMetrics` serde output.
-- [ ] Decide whether arrays are inline or nested under a `telemetry` key.
+- [x] Define standardized array field names for `CharacterSheet` and `VaamMetrics` serde output.
+- [x] Decide whether arrays are inline or nested under a `telemetry` key.
 
 ### 10.2 Implement — Serde arrays
-- [ ] Add historical series fields to `CharacterSheet` and `VaamMetrics`.
-- [ ] Ensure backward-compatible deserialization (default empty arrays).
-- [ ] Update `save.rs` roundtrip test.
+- [x] Add historical series fields to `CharacterSheet` and `VaamMetrics`.
+- [x] Ensure backward-compatible deserialization (default empty arrays).
+- [x] Update `save.rs` roundtrip test.
 
 ### 10.3 Implement — Dashboard parsing
-- [ ] Update `dashboard/index.html` to read new arrays.
-- [ ] Render CCSS coverage heatmap.
-- [ ] Render lexical-diversity and syntactic-complexity trend lines.
-- [ ] Render IEP-friendly raw numbers table.
+- [x] Update `dashboard/index.html` to read new arrays.
+- [x] Render CCSS coverage heatmap.
+- [x] Render lexical-diversity and syntactic-complexity trend lines.
+- [x] Render IEP-friendly raw numbers table.
 
 ### 10.4 Evaluate — Test and commit
-- [ ] `cargo test` passes.
-- [ ] Manual check: dashboard loads a sample `save.json` without errors.
-- [ ] Commit: "Phase 10 complete: institutional serialization and dashboard reports"
+- [/] `cargo test` passes.
+- [/] Manual check: dashboard loads a sample `save.json` without errors.
+- [/] Commit: "Phase 10 complete: institutional serialization and dashboard reports"
 
 ## Phase 11: 2D Demo Polish
 

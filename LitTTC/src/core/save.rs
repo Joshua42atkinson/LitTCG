@@ -4,6 +4,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use bevy::prelude::*;
 use crate::components::*;
+use crate::battle::VaamMetrics;
 use crate::platform_paths::data_dir;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -11,6 +12,7 @@ pub struct SaveData {
     pub character_sheet: CharacterSheet,
     pub spellbook: SpellBook,
     pub word_trail: WordTrail,
+    pub vaam_metrics: VaamMetrics,
 }
 
 impl SaveData {
@@ -21,16 +23,18 @@ impl SaveData {
     }
 }
 
-/// Writes the current character sheet, spellbook, and word trail to save.json.
+/// Writes the current character sheet, spellbook, word trail, and VAAM metrics to save.json.
 pub fn save_game(
     sheet: &CharacterSheet,
     spellbook: &SpellBook,
     trail: &WordTrail,
+    metrics: &VaamMetrics,
 ) -> Result<(), std::io::Error> {
     let data = SaveData {
         character_sheet: sheet.clone(),
         spellbook: SpellBook { entries: spellbook.entries.clone() },
         word_trail: trail.clone(),
+        vaam_metrics: metrics.clone(),
     };
 
     let serialized = serde_json::to_string_pretty(&data)?;
@@ -60,13 +64,14 @@ pub fn auto_save_system(
     sheet: Res<CharacterSheet>,
     spellbook: Res<SpellBook>,
     trail: Res<WordTrail>,
+    metrics: Res<VaamMetrics>,
     demo: Res<crate::paywall::DemoSettings>,
 ) {
     if demo.is_demo {
         return; // Disable saving in demo mode
     }
 
-    if let Err(e) = save_game(&sheet, &spellbook, &trail) {
+    if let Err(e) = save_game(&sheet, &spellbook, &trail, &metrics) {
         warn!("Failed to auto-save: {}", e);
     } else {
         info!("Auto-saved progress.");
@@ -102,10 +107,12 @@ mod tests {
             current_word: Some("clarity".to_string()),
         };
 
+        let metrics = VaamMetrics::default();
         let data = SaveData {
             character_sheet: sheet.clone(),
             spellbook: SpellBook { entries: spellbook.entries.clone() },
             word_trail: trail.clone(),
+            vaam_metrics: metrics.clone(),
         };
         let json = serde_json::to_string_pretty(&data).expect("should serialize");
         let loaded: SaveData = serde_json::from_str(&json).expect("should deserialize");

@@ -48,6 +48,7 @@
             font-size: 2.5rem;
             font-weight: 800;
             background: linear-gradient(135deg, #a78bfa, #34d399);
+            background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             letter-spacing: -1px;
@@ -250,6 +251,97 @@
             display: none;
             animation: fadeIn 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
         }
+
+        .ccss-row {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .ccss-code {
+            min-width: 7rem;
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: var(--text-main);
+        }
+
+        .ccss-bar-bg {
+            flex: 1;
+            height: 1.25rem;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .ccss-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            border-radius: 8px;
+            transition: width 0.6s ease;
+        }
+
+        .ccss-count {
+            min-width: 3rem;
+            text-align: right;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .trend-row {
+            margin-bottom: 1.5rem;
+        }
+
+        .trend-label {
+            display: block;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .sparkline {
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 4rem;
+            padding: 0.5rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+        }
+
+        .spark-bar {
+            flex: 1;
+            min-width: 3px;
+            background: var(--primary);
+            border-radius: 2px 2px 0 0;
+            opacity: 0.85;
+        }
+
+        .spark-bar.alt {
+            background: var(--secondary);
+        }
+
+        .iep-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .iep-table th, .iep-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .iep-table th {
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .iep-table td {
+            color: var(--text-main);
+            font-family: monospace;
+        }
     </style>
 </head>
 <body>
@@ -297,6 +389,46 @@
                 <ul class="spell-list" id="spell-list">
                     <!-- Javascript will inject list items here -->
                 </ul>
+            </div>
+
+            <!-- CCSS Coverage Heatmap -->
+            <div class="card">
+                <div class="spellbook-header">
+                    <h3>CCSS ELA Coverage</h3>
+                    <span style="color: var(--text-muted); font-size: 0.9rem;">Demonstrated standard exposures</span>
+                </div>
+                <div id="ccss-heatmap" style="margin-top: 1rem;"></div>
+            </div>
+
+            <!-- Psychometric Trend Charts -->
+            <div class="card">
+                <div class="spellbook-header">
+                    <h3>Psychometric Trends</h3>
+                    <span style="color: var(--text-muted); font-size: 0.9rem;">HD-D, MTLD, and syntactic complexity over time</span>
+                </div>
+                <div id="trend-charts" style="margin-top: 1rem;">
+                    <div class="trend-row">
+                        <span class="trend-label">Lexical Diversity (HD-D)</span>
+                        <div class="sparkline" id="hd-d-sparkline"></div>
+                    </div>
+                    <div class="trend-row">
+                        <span class="trend-label">Lexical Diversity (MTLD)</span>
+                        <div class="sparkline" id="mtld-sparkline"></div>
+                    </div>
+                    <div class="trend-row">
+                        <span class="trend-label">Syntactic Complexity Ratio</span>
+                        <div class="sparkline" id="syntax-sparkline"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- IEP-friendly Raw Numbers -->
+            <div class="card">
+                <div class="spellbook-header">
+                    <h3>IEP-Friendly Raw Numbers</h3>
+                    <span style="color: var(--text-muted); font-size: 0.9rem;">Present-level performance snapshot</span>
+                </div>
+                <div id="iep-table" style="margin-top: 1rem;"></div>
             </div>
 
         </div>
@@ -348,6 +480,13 @@
                     } else {
                         ul.innerHTML = '<li style="text-align:center; padding: 2rem; color: #94a3b8;">No words mastered yet. Play the game to start learning!</li>';
                     }
+
+                    // Render institutional telemetry
+                    const telemetry = data.vaam_metrics?.telemetry || data.character_sheet?.telemetry || {};
+                    const ccssCoverage = data.vaam_metrics?.ccss_coverage || {};
+                    renderCcssHeatmap(ccssCoverage);
+                    renderTrendCharts(telemetry);
+                    renderIepTable(telemetry);
                 } catch(err) {
                     console.error(err);
                     alert("Error: Invalid save.json format. Please ensure you are uploading the correct file.");
@@ -355,6 +494,71 @@
             };
             reader.readAsText(file);
         });
+
+        function renderCcssHeatmap(coverage) {
+            const container = document.getElementById('ccss-heatmap');
+            const entries = Object.entries(coverage).sort((a, b) => b[1] - a[1]);
+            if (entries.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-muted);">No standard exposures recorded yet.</p>';
+                return;
+            }
+            const max = Math.max(...entries.map(e => e[1]));
+            container.innerHTML = entries.map(([code, count]) => {
+                const pct = max > 0 ? (count / max) * 100 : 0;
+                return `
+                    <div class="ccss-row">
+                        <span class="ccss-code">${code}</span>
+                        <div class="ccss-bar-bg"><div class="ccss-bar-fill" style="width: ${pct}%"></div></div>
+                        <span class="ccss-count">${count}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderSparkline(containerId, series, altColor) {
+            const container = document.getElementById(containerId);
+            if (!series || series.length === 0) {
+                container.innerHTML = '<span style="color: var(--text-muted); font-size: 0.8rem;">No data</span>';
+                return;
+            }
+            const values = series.map(s => typeof s === 'number' ? s : s.hd_d || s.mtld || 0);
+            const max = Math.max(...values, 0.001);
+            container.innerHTML = values.map(v => {
+                const h = Math.max(4, (v / max) * 100);
+                return `<div class="spark-line-bar" style="flex:1; min-width:3px; height:${h}%; background:${altColor ? 'var(--secondary)' : 'var(--primary)'}; border-radius:2px 2px 0 0; opacity:0.85;"></div>`;
+            }).join('');
+        }
+
+        function renderTrendCharts(telemetry) {
+            const ldSeries = telemetry.lexical_diversity_series || [];
+            renderSparkline('hd-d-sparkline', ldSeries.map(s => s.hd_d), false);
+            renderSparkline('mtld-sparkline', ldSeries.map(s => s.mtld), true);
+            renderSparkline('syntax-sparkline', telemetry.syntactic_complexity_series || [], true);
+        }
+
+        function renderIepTable(telemetry) {
+            const table = document.getElementById('iep-table');
+            const syntax = telemetry.syntax_series || [];
+            const semantics = telemetry.semantics_series || [];
+            const pragmatics = telemetry.pragmatics_series || [];
+
+            const avg = arr => arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(2) : '—';
+            const last = arr => arr.length ? arr[arr.length - 1].toFixed(2) : '—';
+
+            table.innerHTML = `
+                <table class="iep-table">
+                    <thead>
+                        <tr><th>Metric</th><th>Sessions</th><th>Average</th><th>Latest</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Syntax</td><td>${syntax.length}</td><td>${avg(syntax)}</td><td>${last(syntax)}</td></tr>
+                        <tr><td>Semantics</td><td>${semantics.length}</td><td>${avg(semantics)}</td><td>${last(semantics)}</td></tr>
+                        <tr><td>Pragmatics / FACES</td><td>${pragmatics.length}</td><td>${avg(pragmatics)}</td><td>${last(pragmatics)}</td></tr>
+                        <tr><td>Lexical Diversity Snapshots</td><td>${(telemetry.lexical_diversity_series || []).length}</td><td colspan="2">HD-D / MTLD per cast window</td></tr>
+                    </tbody>
+                </table>
+            `;
+        }
 
         // Helper function to animate numbers counting up
         function animateValue(id, start, end, duration) {

@@ -3,7 +3,7 @@
 use lit_tcg::components::*;
 use lit_tcg::database::GameDatabase;
 use lit_tcg::quest::{self, QuestSession};
-use lit_tcg::battle::{self, BattleSession};
+use lit_tcg::battle::{self, BattleSession, VaamMetrics};
 use lit_tcg::save::{self, SaveData};
 use lit_tcg::blocklist;
 use lit_tcg::commands::{GameCommand, LastCommand, handle_game_commands};
@@ -249,8 +249,10 @@ fn test_local_save_system() {
         current_word: Some("clarity".to_string()),
     };
     
+    let metrics = VaamMetrics::default();
+
     // Test saving
-    let save_res = save::save_game(&sheet, &spellbook, &trail);
+    let save_res = save::save_game(&sheet, &spellbook, &trail, &metrics);
     assert!(save_res.is_ok(), "Saving progress to disk should succeed");
     
     // Test loading

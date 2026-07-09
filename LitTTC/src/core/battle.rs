@@ -144,7 +144,6 @@ pub struct VaamMetrics {
 
     /// Rolling token window for HD-D / MTLD lexical diversity calculations.
     /// Stores lowercased words in cast order; capped to `LEXICAL_DIVERSITY_WINDOW`.
-    #[serde(skip)]
     pub token_window: Vec<String>,
 }
 
